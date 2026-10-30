@@ -220,10 +220,16 @@ Structural validation reconstructs the expected article from the immutable
 original and accepted patches. The candidate must equal this reconstruction. It
 must not contain error annotations, JSON artifacts, or code fences.
 
-Factual validation rechecks all cited evidence. A replacement value must be an
-exact phrase or token subset of the evidence. Numeric replacement values must
-also occur in the evidence. A deletion needs exact support for the corrected
-sentence. If Python cannot establish this support, it leaves the original text.
+Factual validation first rechecks all cited evidence. A replacement value must
+pass a lexical support check. The check allows narrow spelling and unit-spacing
+equivalences, such as vapor/vapour and 3,000nits/3,000 nits. It does not treat
+different numbers or materials as equivalent. This check is not an entailment proof.
+
+By default, a model then reviews each changed sentence with its source evidence.
+It checks the edited relationships, negations, and patch boundaries. Python checks
+its citations. An uncertain or failed review cannot authorize a patch. Set
+`ENABLE_VALIDATION_LLM=false` only to disable this additional paid gate explicitly.
+The operational review is not an independent evaluation score.
 
 The preservation validator reports large edits as warnings. A size threshold is
 not proof that an edit is wrong. The system does not reject a grounded patch only
@@ -236,6 +242,14 @@ one focused schema-repair request. Invalid JSON never becomes a fabricated patch
 
 Patch validation permits at most one targeted retry by default. The retry prompt
 contains the exact validation failure. The graph cannot enter an unlimited loop.
+The retry retains accepted edits in other parts of the batch. A sentence review
+waits until pending deterministic repairs in that sentence finish.
+
+The proposer receives all actionable issues for a sentence in one call. It must
+produce one coordinated edit set. Each edit retains its own request and evidence
+authorization. Agreeing detections therefore do not create competing patches.
+For insufficient evidence and initial contradictions, the verifier makes at most
+one additional retrieval pass. This pass also looks for counter-evidence.
 
 A rejected or unresolved patch does not change the final article. The last known
 safe text is always the immutable original plus validated patches.
@@ -438,3 +452,44 @@ correct fact, the system changes the smallest unique span that can correct it.
 A successful workflow does not prove that the full article is correct. The report
 separates observed corrections, unresolved issues, deterministic metrics, and
 unavailable factuality judgments.
+
+## Local troubleshooting traces
+
+Set `RECTIFIER_DEBUG=1` to record per-stage JSONL traces in
+`audit_logs/debug/<run-id>.jsonl`. The trace records planner output, exact
+retrieved passages, raw and accepted verification results, raw and accepted
+patch proposals, executor rejection reasons, and validator decisions. A debug
+trace includes article excerpts, so treat it as local working data. Audit logs
+are excluded from version control. The trace does not include API credentials.
+
+Each node logs start and finish times, input state, returned state updates, and
+exceptions. `candidate_text` holds text; `status` holds the workflow status.
+Strings in debug traces have a length limit. Read saved article files for complete
+outputs. API attempt logs are in `audit_logs/calls/<run-id>.jsonl`. They include
+tokens, latency, retry outcomes, model ID, and request fingerprints. The totals
+include invalid responses and schema repairs. Cache hits count as zero paid calls.
+
+Run `uv run python scripts/inspect_trace.py <trace-file>` for node times and
+rejection reasons. Add `--details` to inspect the saved state transitions.
+BM25 sums tokens in a fixed order. Scores and cache fingerprints remain stable
+across Python processes with different hash seeds.
+
+For a paid diagnostic run, check the budget first. Use a new `PROJECT_ROOT`
+directory for runtime logs and cache, and a dedicated `--output-dir`. Data input
+paths remain repository-relative. Keep `RECTIFIER_CACHE_ONLY=false`. Reuse this
+runtime directory for subsequent diagnosis to preserve paid responses.
+
+Use `uv run python -m evaluate.diagnostic_report --outputs <output-directory>
+--traces <article-trace-1> <article-trace-2> --report <report.json>` to calculate
+metrics from saved outputs. This command makes no network requests. Diagnostic
+articles used to improve the pipeline are development cases, not holdout tests.
+
+Use `RECTIFIER_CACHE_ONLY=1` to prohibit real model calls. Cache hits are
+replayed, but missing entries become explicit `cache_miss_offline` failures.
+This mode is for diagnosis only. It can produce degraded unchanged outputs.
+Do not use cache-only runs for factual-quality evaluation.
+
+```bash
+RECTIFIER_DEBUG=1 RECTIFIER_CACHE_ONLY=1 uv run python rectifier.py test \
+  --count 1 --output-dir evaluate/reports/cache-debug
+```
