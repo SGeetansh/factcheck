@@ -196,3 +196,51 @@ Ensure that your code handles exceptions gracefully and that your logic is robus
 
 **Good luck! We're excited to see your approach to this challenge.**
 
+---
+
+## Implemented source-grounded rectifier
+
+This repository now uses a controlled LangGraph workflow. The workflow detects
+claims, retrieves exact local source passages, verifies each claim, proposes small
+structured edits, applies exact spans with Python, and validates the result. The
+language model does not write article files or return an accepted full rewrite.
+
+The implementation uses Pydantic 2, LangGraph 1.2.18, and LiteLLM. It does not use
+an external search service or vector database. It writes local JSONL audit records
+to `audit_logs/` and can cache validated model responses under `.cache/`.
+
+Use Python 3.11 and install the pinned runtime dependencies:
+
+```bash
+python3 -m pip install -r requirements.txt
+cp env.example .env
+```
+
+Run all offline tests and quality checks:
+
+```bash
+uv sync
+uv run black --check .
+uv run ruff check .
+uv run pytest -q
+```
+
+Use a dedicated output directory for a small development pilot:
+
+```bash
+python3 rectifier.py test --count 1 --output-dir evaluate/reports/pilot-output
+```
+
+Check the provider balance before and after any real call. The explicit
+`smoke-test` command checks the balance before and after one small structured
+connection request.
+
+The required grading command remains:
+
+```bash
+python3 rectifier.py rectify-all
+```
+
+See [documentation.md](documentation.md) for the architecture, state, validation,
+evaluation formulas, testing strategy, cost controls, and known limitations.
+
