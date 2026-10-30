@@ -159,3 +159,8 @@ rectified_articles/article_101.txt
 rectified_articles/article_102.txt
 rectified_articles/article_103.txt
 rectified_articles/article_104.txt
+
+# Generated evaluation results
+evaluate/reports/*
+!evaluate/reports/.gitkeep
+.venv/
