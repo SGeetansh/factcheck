@@ -83,6 +83,17 @@ class StructuredLLMResult(Generic[SchemaT]):
         return self.value is not None
 
 
+@dataclass(frozen=True, slots=True)
+class _RequestContext(Generic[SchemaT]):
+    """Bundle stable metadata shared by request outcome records."""
+
+    schema: type[SchemaT]
+    prompt_version: str
+    schema_version: str
+    cache_key: str
+    started: float
+
+
 def _read_field(value: object, name: str, default: object = None) -> object:
     """Read one field from a dynamic LiteLLM object or mapping.
 
@@ -313,80 +324,142 @@ class LLMClient:
         """Execute one request and at most one invalid-JSON repair."""
         current_messages = list(messages)
         total_retries = 0
-        last_response: object | None = None
+        context = _RequestContext(
+            schema, prompt_version, schema_version, cache_key, started
+        )
         for repair in range(2):
             response, retries, error = self._call_transport(current_messages)
             total_retries += retries
             if response is None:
-                status = LLMResponseStatus.TRANSPORT_FAILURE
-                return self._failure(
-                    status,
+                return self._context_failure(
+                    context,
+                    LLMResponseStatus.TRANSPORT_FAILURE,
                     error,
-                    schema,
-                    prompt_version,
-                    schema_version,
-                    cache_key,
-                    started,
                     total_retries,
                     None,
                 )
-            last_response = response
-            content = _extract_content(response)
-            if not content.strip():
-                return self._failure(
-                    LLMResponseStatus.EMPTY_RESPONSE,
-                    "empty_content",
-                    schema,
-                    prompt_version,
-                    schema_version,
-                    cache_key,
-                    started,
+            value, status, error_code, content = self._parse_response(response, schema)
+            if status is LLMResponseStatus.EMPTY_RESPONSE:
+                return self._context_failure(
+                    context,
+                    status,
+                    error_code,
                     total_retries,
                     response,
                 )
-            try:
-                value = schema.model_validate_json(content)
-            except (ValidationError, ValueError):
+            if status is LLMResponseStatus.INVALID_RESPONSE:
                 if repair == 0:
                     total_retries += 1
                     current_messages = self._repair_messages(
                         current_messages, content, schema
                     )
                     continue
-                return self._failure(
+                return self._context_failure(
+                    context,
                     LLMResponseStatus.INVALID_RESPONSE,
                     "schema_validation",
-                    schema,
-                    prompt_version,
-                    schema_version,
-                    cache_key,
-                    started,
                     total_retries,
                     response,
                 )
-            self._save_cache(cache_key, value)
-            record = self._record(
-                prompt_version=prompt_version,
-                schema=schema,
-                schema_version=schema_version,
-                cache_key=cache_key,
-                status=LLMResponseStatus.SUCCESS,
-                started=started,
-                retry_count=total_retries,
-                response=response,
+            if value is None:
+                raise RuntimeError("Validated LLM response did not contain a value")
+            return self._success(
+                value,
+                response,
+                total_retries,
+                context,
             )
-            return StructuredLLMResult(value, record)
-        return self._failure(
-            LLMResponseStatus.INVALID_RESPONSE,
-            "unreachable",
-            schema,
-            prompt_version,
-            schema_version,
-            cache_key,
-            started,
-            total_retries,
-            last_response,
+        raise RuntimeError("Structured response repair loop ended unexpectedly")
+
+    def _success(
+        self,
+        value: SchemaT,
+        response: object,
+        retry_count: int,
+        context: _RequestContext[SchemaT],
+    ) -> StructuredLLMResult[SchemaT]:
+        """Cache one valid value and create its complete success record.
+
+        Args:
+            value: Pydantic-validated response value.
+            response: Dynamic LiteLLM response with optional usage metadata.
+            retry_count: Transport and schema-repair retry count.
+            context: Stable request metadata.
+
+        Returns:
+            Successful structured result with usage provenance.
+        """
+        self._save_cache(context.cache_key, value)
+        record = self._record(
+            prompt_version=context.prompt_version,
+            schema=context.schema,
+            schema_version=context.schema_version,
+            cache_key=context.cache_key,
+            status=LLMResponseStatus.SUCCESS,
+            started=context.started,
+            retry_count=retry_count,
+            response=response,
         )
+        return StructuredLLMResult(value, record)
+
+    def _context_failure(
+        self,
+        context: _RequestContext[SchemaT],
+        status: LLMResponseStatus,
+        error_code: str | None,
+        retry_count: int,
+        response: object | None,
+    ) -> StructuredLLMResult[SchemaT]:
+        """Create a failure from bundled stable request metadata.
+
+        Args:
+            context: Stable request metadata.
+            status: Typed response failure status.
+            error_code: Optional transport or validation code.
+            retry_count: Transport and schema-repair retry count.
+            response: Dynamic response with optional usage metadata.
+
+        Returns:
+            Explicit structured failure without a model value.
+        """
+        return self._failure(
+            status,
+            error_code,
+            context.schema,
+            context.prompt_version,
+            context.schema_version,
+            context.cache_key,
+            context.started,
+            retry_count,
+            response,
+        )
+
+    def _parse_response(
+        self,
+        response: object,
+        schema: type[SchemaT],
+    ) -> tuple[SchemaT | None, LLMResponseStatus | None, str | None, str]:
+        """Extract and validate one exact structured response body.
+
+        Args:
+            response: Dynamic LiteLLM response.
+            schema: Required Pydantic response model.
+
+        Returns:
+            Value, optional failure status, optional error code, and raw content.
+        """
+        content = _extract_content(response)
+        if not content.strip():
+            return None, LLMResponseStatus.EMPTY_RESPONSE, "empty_content", content
+        try:
+            return schema.model_validate_json(content), None, None, content
+        except (ValidationError, ValueError):
+            return (
+                None,
+                LLMResponseStatus.INVALID_RESPONSE,
+                "schema_validation",
+                content,
+            )
 
     def _repair_messages(
         self,
