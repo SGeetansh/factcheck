@@ -58,6 +58,18 @@ class VerificationResult(BaseModel):
                 raise ValueError("Only contradicted claims can have a correction")
             if not self.proposed_factual_correction:
                 raise ValueError("Available corrections require corrected facts")
+        elif self.proposed_factual_correction is not None:
+            raise ValueError("Non-actionable verdicts cannot contain corrections")
+        if (
+            self.verdict is Verdict.SUPPORTED
+            and self.status is not VerificationStatus.NO_CHANGE
+        ):
+            raise ValueError("Supported claims must use no-change status")
+        if (
+            self.verdict in {Verdict.UNSUPPORTED, Verdict.UNCERTAIN}
+            and self.status is not VerificationStatus.UNRESOLVED
+        ):
+            raise ValueError("Insufficient evidence must remain unresolved")
         return self
 
 
