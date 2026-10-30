@@ -15,6 +15,7 @@ class BatchState(TypedDict):
     """Track immutable inputs and bounded outputs for one article batch."""
 
     article_id: str
+    run_id: str
     batch: ArticleBatch
     source_text: str
     source_index: SourceIndex

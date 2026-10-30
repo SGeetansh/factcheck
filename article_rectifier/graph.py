@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Literal, cast
 
 from langgraph.graph import END, START, StateGraph
@@ -18,6 +19,7 @@ from article_rectifier.nodes.evidence_verifier import EvidenceVerifier
 from article_rectifier.nodes.fact_planner import FactPlanner
 from article_rectifier.nodes.patch_proposer import PatchProposer
 from article_rectifier.nodes.validator import validate_patches
+from article_rectifier.observability.logging import AuditLogger
 from article_rectifier.retrieval.retriever import search_source
 
 
@@ -52,18 +54,56 @@ def _sentence_map(state: BatchState) -> dict[str, SentenceSpan]:
 class BatchWorkflow:
     """Coordinate explicit batch nodes with one bounded patch retry."""
 
-    def __init__(self, settings: Settings, llm_client: LLMClient) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        llm_client: LLMClient,
+        audit_logger: AuditLogger | None = None,
+    ) -> None:
         """Initialize node services and compile a reusable StateGraph.
 
         Args:
             settings: Validated runtime and safety configuration.
             llm_client: Centralized structured LLM adapter.
+            audit_logger: Optional local structured event sink.
         """
         self.settings = settings
         self.planner = FactPlanner(llm_client)
         self.verifier = EvidenceVerifier(llm_client)
         self.proposer = PatchProposer(llm_client)
+        self.audit_logger = audit_logger
         self.compiled = self._build_graph()
+
+    def _emit(
+        self,
+        state: BatchState,
+        node_name: str,
+        event_type: str,
+        status: str,
+        started: float,
+        **details: str | int | float | bool | None,
+    ) -> None:
+        """Emit one node event when local auditing is configured.
+
+        Args:
+            state: Current typed batch state.
+            node_name: Explicit graph node name.
+            event_type: Stable decision or transition event.
+            status: Accurate outcome status.
+            started: Monotonic node start time.
+            **details: Compact non-secret event observations.
+        """
+        if self.audit_logger is not None:
+            self.audit_logger.emit(
+                run_id=state["run_id"],
+                article_id=state["article_id"],
+                batch_id=state["batch"].batch_id,
+                node_name=node_name,
+                event_type=event_type,
+                status=status,
+                duration_seconds=time.monotonic() - started,
+                details=details,
+            )
 
     def _build_graph(self) -> CompiledStateGraph:
         """Compile explicit nodes and conditional retry transitions.
@@ -95,10 +135,19 @@ class BatchWorkflow:
 
     def _plan(self, state: BatchState) -> dict[str, object]:
         """Run structured fact planning for the editable batch."""
+        started = time.monotonic()
         outcome = self.planner.plan(state["article_id"], state["batch"])
         records = list(state["llm_records"])
         if outcome.call_record:
             records.append(outcome.call_record)
+        self._emit(
+            state,
+            "planner",
+            "facts_planned",
+            "degraded" if outcome.errors else "completed",
+            started,
+            fact_count=len(outcome.plan.requests),
+        )
         return {
             "fact_requests": list(outcome.plan.requests),
             "llm_records": records,
@@ -107,6 +156,7 @@ class BatchWorkflow:
 
     def _retrieve(self, state: BatchState) -> dict[str, object]:
         """Retrieve exact source evidence for each planned request."""
+        started = time.monotonic()
         retrieved = {
             request.request_id: search_source(
                 request.search_query,
@@ -116,10 +166,20 @@ class BatchWorkflow:
             )
             for request in state["fact_requests"]
         }
+        self._emit(
+            state,
+            "retrieve_evidence",
+            "evidence_retrieved",
+            "completed",
+            started,
+            evidence_count=sum(len(items) for items in retrieved.values()),
+            retrieval_failures=sum(not items for items in retrieved.values()),
+        )
         return {"retrieved_evidence": retrieved}
 
     def _verify(self, state: BatchState) -> dict[str, object]:
         """Verify every request against its exact retrieved passages."""
+        started = time.monotonic()
         verifications = []
         records = list(state["llm_records"])
         errors = list(state["errors"])
@@ -133,6 +193,14 @@ class BatchWorkflow:
             if outcome.call_record:
                 records.append(outcome.call_record)
             errors.extend(outcome.errors)
+        self._emit(
+            state,
+            "verify_evidence",
+            "claim_verified",
+            "degraded" if len(errors) > len(state["errors"]) else "completed",
+            started,
+            verification_count=len(verifications),
+        )
         return {
             "verification_results": verifications,
             "llm_records": records,
@@ -141,6 +209,7 @@ class BatchWorkflow:
 
     def _propose(self, state: BatchState) -> dict[str, object]:
         """Propose minimal edits for all actionable contradictions."""
+        started = time.monotonic()
         requests = {item.request_id: item for item in state["fact_requests"]}
         sentences = _sentence_map(state)
         proposed = []
@@ -168,10 +237,19 @@ class BatchWorkflow:
             if outcome.call_record:
                 records.append(outcome.call_record)
             errors.extend(outcome.errors)
+        self._emit(
+            state,
+            "propose_patches",
+            "patch_proposed",
+            "degraded" if len(errors) > len(state["errors"]) else "completed",
+            started,
+            patch_count=len(proposed),
+        )
         return {"proposed_edits": proposed, "llm_records": records, "errors": errors}
 
     def _execute(self, state: BatchState) -> dict[str, object]:
         """Resolve and execute only authorized non-conflicting edits."""
+        started = time.monotonic()
         execution = execute_edits(
             state["original_text"],
             state["proposed_edits"],
@@ -180,10 +258,28 @@ class BatchWorkflow:
             _all_evidence(state),
             state["source_text"],
         )
+        accepted = sum(
+            item.status is PatchStatus.ACCEPTED for item in execution.results
+        )
+        event_type = (
+            "patch_accepted"
+            if accepted
+            else "patch_rejected" if execution.results else "patch_skipped"
+        )
+        self._emit(
+            state,
+            "execute_patches",
+            event_type,
+            "completed",
+            started,
+            accepted_patches=accepted,
+            rejected_patches=len(execution.results) - accepted,
+        )
         return {"patch_results": list(execution.results), "status": execution.text}
 
     def _validate(self, state: BatchState) -> dict[str, object]:
         """Validate provisional output and roll back every unsafe patch."""
+        started = time.monotonic()
         validation = validate_patches(
             state["original_text"],
             state["status"],
@@ -201,6 +297,16 @@ class BatchWorkflow:
             else "completed"
         )
         errors = [*state["errors"], *validation.warnings]
+        self._emit(
+            state,
+            "validate",
+            "retry_requested" if status == "retryable" else "batch_completed",
+            status,
+            started,
+            accepted_patches=sum(
+                item.status is PatchStatus.ACCEPTED for item in validation.results
+            ),
+        )
         return {
             "patch_results": list(validation.results),
             "status": status,

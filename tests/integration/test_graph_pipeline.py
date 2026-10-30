@@ -6,6 +6,7 @@ from pathlib import Path
 from article_rectifier.config import Settings
 from article_rectifier.llm import LLMClient, MockLLMTransport
 from article_rectifier.models import ArticleInput, ErrorType
+from article_rectifier.observability import AuditLogger
 from article_rectifier.pipeline import (
     ArticleProcessingStatus,
     ArticleRectificationPipeline,
@@ -361,3 +362,49 @@ def test_validation_failure_gets_one_targeted_retry(tmp_path: Path) -> None:
     assert len(transport.calls) == 4
     retry_messages = str(transport.calls[3]["messages"])
     assert "replacement value is absent" in retry_messages
+
+
+def test_pipeline_emits_required_local_audit_events(tmp_path: Path) -> None:
+    """Record article, batch, and explicit node lifecycle events as JSONL.
+
+    Args:
+        tmp_path: Temporary project and audit root.
+
+    Returns:
+        None.
+    """
+    settings = Settings(
+        LLM_API_KEY="test-key",
+        project_root=tmp_path,
+        enable_llm_cache=False,
+        max_llm_retries=0,
+        _env_file=None,
+    )
+    transport = MockLLMTransport([response({"requests": []})])
+    audit_path = tmp_path / "events.jsonl"
+    service = ArticleRectificationPipeline(
+        settings,
+        LLMClient(settings, transport),
+        AuditLogger(audit_path),
+    )
+    service.rectify(
+        ArticleInput(
+            article_id=ARTICLE_ID,
+            source_text="A source.",
+            generated_text="A quiet essay.",
+        )
+    )
+    events = [
+        json.loads(line)["event_type"] for line in audit_path.read_text().splitlines()
+    ]
+    assert events == [
+        "article_started",
+        "batch_created",
+        "facts_planned",
+        "evidence_retrieved",
+        "claim_verified",
+        "patch_proposed",
+        "patch_skipped",
+        "batch_completed",
+        "article_completed",
+    ]
