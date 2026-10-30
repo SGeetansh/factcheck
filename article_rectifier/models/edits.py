@@ -26,6 +26,8 @@ class SurgicalEdit(BaseModel):
     operation: EditOperation = EditOperation.REPLACE
     original_text: str
     replacement_text: str
+    insertion_anchor: str | None = None
+    insert_after_anchor: bool = False
     evidence_ids: tuple[str, ...] = Field(min_length=1)
     error_type: ErrorType
     explanation: str = Field(min_length=1, max_length=500)
@@ -44,8 +46,11 @@ class SurgicalEdit(BaseModel):
         """
         if (self.global_start is None) != (self.global_end is None):
             raise ValueError("Patch offsets must be both set or both omitted")
-        if self.operation is EditOperation.INSERT and self.original_text:
-            raise ValueError("Insertions must use an empty original span")
+        if self.operation is EditOperation.INSERT:
+            if self.original_text or not self.insertion_anchor:
+                raise ValueError("Insertions require an empty span and exact anchor")
+        elif self.insertion_anchor is not None:
+            raise ValueError("Only insertions can contain an insertion anchor")
         if self.operation is EditOperation.DELETE and self.replacement_text:
             raise ValueError("Deletions must use an empty replacement")
         if self.operation is EditOperation.REPLACE and (
@@ -54,4 +59,27 @@ class SurgicalEdit(BaseModel):
             raise ValueError("Replacements require non-empty old and new text")
         if self.original_text == self.replacement_text:
             raise ValueError("No-op edits are not permitted")
+        return self
+
+
+class PatchProposal(BaseModel):
+    """Contain bounded edit proposals for one verified factual issue."""
+
+    model_config = ConfigDict(frozen=True)
+
+    edits: tuple[SurgicalEdit, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_unique_patch_ids(self) -> "PatchProposal":
+        """Reject duplicate patch identifiers.
+
+        Returns:
+            The validated patch proposal.
+
+        Raises:
+            ValueError: If patch IDs repeat.
+        """
+        identifiers = [edit.patch_id for edit in self.edits]
+        if len(identifiers) != len(set(identifiers)):
+            raise ValueError("Patch IDs must be unique")
         return self

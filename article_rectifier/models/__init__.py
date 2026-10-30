@@ -2,7 +2,7 @@
 
 from article_rectifier.models.article import ArticleBatch, ArticleInput, SentenceSpan
 from article_rectifier.models.claims import ErrorType, FactCheckPlan, FactCheckRequest
-from article_rectifier.models.edits import EditOperation, SurgicalEdit
+from article_rectifier.models.edits import EditOperation, PatchProposal, SurgicalEdit
 from article_rectifier.models.evidence import EvidenceSpan, RetrievalStrategy
 from article_rectifier.models.results import (
     PatchResult,
@@ -20,6 +20,7 @@ __all__ = [
     "EvidenceSpan",
     "FactCheckPlan",
     "FactCheckRequest",
+    "PatchProposal",
     "PatchResult",
     "PatchStatus",
     "RetrievalStrategy",

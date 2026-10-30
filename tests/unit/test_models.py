@@ -139,6 +139,7 @@ def test_explicit_insertion_and_deletion_are_valid() -> None:
         operation=EditOperation.INSERT,
         original_text="",
         replacement_text="not ",
+        insertion_anchor="officially banned",
     )
     deletion = make_edit(
         operation=EditOperation.DELETE,
