@@ -98,8 +98,8 @@ def _replacement_is_grounded(edit: SurgicalEdit, evidence: list[EvidenceSpan]) -
     Returns:
         True when replacement text is an exact phrase or token subset.
     """
-    combined = " ".join(item.text for item in evidence).casefold()
-    replacement = edit.replacement_text.strip().casefold()
+    combined = normalize_evidence_surface(" ".join(item.text for item in evidence))
+    replacement = normalize_evidence_surface(edit.replacement_text.strip())
     if replacement and replacement in combined:
         return True
     replacement_tokens = set(tokenize(replacement))
@@ -109,6 +109,24 @@ def _replacement_is_grounded(edit: SurgicalEdit, evidence: list[EvidenceSpan]) -
     numbers = set(re.findall(r"\d+(?:[.,]\d+)*", replacement))
     evidence_numbers = set(re.findall(r"\d+(?:[.,]\d+)*", combined))
     return numbers <= evidence_numbers
+
+
+def normalize_evidence_surface(text: str) -> str:
+    """Normalize spelling and unit spacing without changing factual values.
+
+    Args:
+        text: Exact source or replacement text; the stored text is never changed.
+
+    Returns:
+        Comparison-only form with explicit, narrow equivalences.
+    """
+    normalized = text.casefold()
+    for old, new in {"vapour": "vapor", "aluminium": "aluminum"}.items():
+        normalized = re.sub(rf"\b{old}\b", new, normalized)
+    normalized = re.sub(r"(?<=\d)(?=[a-z])", " ", normalized)
+    normalized = re.sub(r"(?<=\d)-(?=[a-z])", " ", normalized)
+    normalized = re.sub(r"\brs\.?\s*|₹\s*", " inr ", normalized)
+    return " ".join(normalized.split())
 
 
 def _corrected_sentence(

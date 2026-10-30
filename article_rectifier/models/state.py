@@ -29,6 +29,7 @@ class BatchState(TypedDict):
     llm_records: list[LLMCallRecord]
     retry_count: int
     status: str
+    candidate_text: str
     errors: list[str]
 
 

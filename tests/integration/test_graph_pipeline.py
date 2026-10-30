@@ -158,6 +158,7 @@ def pipeline(
         enable_llm_cache=False,
         max_llm_retries=0,
         batch_size=batch_size,
+        enable_validation_llm=False,
         _env_file=None,
     )
     return (
@@ -408,3 +409,90 @@ def test_pipeline_emits_required_local_audit_events(tmp_path: Path) -> None:
         "batch_completed",
         "article_completed",
     ]
+
+
+def test_duplicate_detections_share_one_coordinated_patch_call(tmp_path: Path) -> None:
+    """Resolve agreeing detections once instead of rejecting overlapping edits.
+
+    Args:
+        tmp_path: Isolated cache and diagnostic directory.
+    """
+    original = "The film was blocked in Karnataka."
+    request = plan_for_generated()["requests"][0]
+    second = {**request, "request_id": "req-place-2", "claim_text": "Karnataka"}
+    evidence_id = "src-article-test-0001"
+    outcomes = [
+        response({"requests": [request, second]}),
+        response(
+            verification("req-place", evidence_id, "West Bengal", ErrorType.GEOGRAPHIC)
+        ),
+        response(
+            verification(
+                "req-place-2", evidence_id, "West Bengal", ErrorType.GEOGRAPHIC
+            )
+        ),
+        response(
+            patch(
+                "p1",
+                "req-place",
+                "s0001",
+                "Karnataka",
+                "West Bengal",
+                evidence_id,
+                ErrorType.GEOGRAPHIC,
+            )
+        ),
+    ]
+    service, transport = pipeline(tmp_path, outcomes)
+    result = service.rectify(
+        ArticleInput(
+            article_id=ARTICLE_ID,
+            source_text="Most theaters blocked the film in West Bengal.",
+            generated_text=original,
+        )
+    )
+    assert result.output_text == "The film was blocked in West Bengal."
+    assert len(result.accepted_edits) == 1
+    assert not result.rejected_patches
+    assert len(transport.calls) == 4
+    task = json.loads(transport.calls[-1]["messages"][-1]["content"])
+    assert len(task["verified_issues"]) == 2
+
+
+def test_semantic_rejection_is_bounded_and_preserves_other_accepted_edits(
+    tmp_path: Path,
+) -> None:
+    """A failed sentence review must not discard an accepted edit elsewhere.
+
+    Args:
+        tmp_path: Isolated runtime directory.
+    """
+    uncertain = response(
+        {
+            "verdict": "uncertain",
+            "evidence_ids": ["src-article-test-0001"],
+            "explanation": "The edited relationship is not established.",
+        }
+    )
+    supported = response(
+        {
+            "verdict": "supported",
+            "evidence_ids": ["src-article-test-0003"],
+            "explanation": "The attendance correction matches the source.",
+        }
+    )
+    initial = two_error_outcomes()
+    service, transport = pipeline(
+        tmp_path, [*initial, uncertain, supported, initial[3], uncertain, supported]
+    )
+    service.settings.enable_validation_llm = True
+    result = service.rectify(
+        ArticleInput(
+            article_id=ARTICLE_ID, source_text=SOURCE, generated_text=GENERATED
+        )
+    )
+    assert result.output_text == "The film was blocked in Karnataka. Attendance was 19."
+    assert len(result.accepted_edits) == 1
+    assert len(result.rejected_patches) == 1
+    assert result.rejected_patches[0].status.value == "unresolved"
+    assert len(transport.calls) == 10

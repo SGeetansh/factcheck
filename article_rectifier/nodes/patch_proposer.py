@@ -25,6 +25,7 @@ class PatchProposalOutcome:
     proposal: PatchProposal
     call_record: LLMCallRecord | None
     errors: tuple[str, ...] = ()
+    raw_proposal: PatchProposal | None = None
 
 
 def _is_actionable(verification: VerificationResult) -> bool:
@@ -174,6 +175,81 @@ class PatchProposer:
         """
         self._llm = llm_client
 
+    def propose_group(
+        self,
+        sentence: SentenceSpan,
+        requests: list[FactCheckRequest],
+        verifications: list[VerificationResult],
+        evidence: list[EvidenceSpan],
+        *,
+        retry_feedback: str | None = None,
+        retry_count: int = 0,
+    ) -> PatchProposalOutcome:
+        """Coordinate overlapping verified issues in one sentence-level proposal.
+
+        Args:
+            sentence: The sole editable sentence.
+            requests: Original requests for the actionable issues.
+            verifications: Independently obtained actionable judgments.
+            evidence: Exact passages available to those judgments.
+            retry_feedback: Prior rejection reasons for this sentence.
+            retry_count: Number of prior proposal attempts.
+
+        Returns:
+            Non-conflicting proposals, each authorized by its own verification.
+        """
+        if len(verifications) == 1:
+            return self.propose(
+                sentence,
+                requests[0],
+                verifications[0],
+                evidence,
+                retry_feedback=retry_feedback,
+                retry_count=retry_count,
+            )
+        payload = {
+            "permitted_sentence": sentence.model_dump(mode="json"),
+            "verified_issues": [
+                {
+                    "request": request.model_dump(mode="json"),
+                    "verification": verification.model_dump(mode="json"),
+                }
+                for request, verification in zip(requests, verifications, strict=True)
+            ],
+            "evidence": [item.model_dump(mode="json") for item in evidence],
+            "retry_feedback": retry_feedback,
+            "response_schema": PatchProposal.model_json_schema(),
+        }
+        response = self._llm.complete_structured(
+            [
+                {
+                    "role": "system",
+                    "content": PATCH_SYSTEM_PROMPT
+                    + " Multiple checks can describe the SAME error. Correct it ONCE. "
+                    "Return one coordinated set of non-overlapping edits for this "
+                    "sentence. Each edit must use one supplied request_id and only "
+                    "that request's verified evidence IDs and error types. Leave "
+                    "global offsets null. Keep already-correct facts, currency "
+                    "notation and style unchanged. Read the resulting sentence after "
+                    "applying edits. Include an adjacent a/an in the target only "
+                    "when the factual replacement requires that "
+                    "agreement change. Do not leave a grammatically broken boundary.",
+                },
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+            PatchProposal,
+            prompt_version="patch-group-v2",
+        )
+        if response.value is None:
+            return PatchProposalOutcome(
+                PatchProposal(),
+                response.record,
+                (f"patch_llm:{response.record.status}",),
+            )
+        return _validate_group_response(
+            response.value, response.record, sentence, requests, verifications, evidence
+        )
+
     def propose(
         self,
         sentence: SentenceSpan,
@@ -234,4 +310,50 @@ class PatchProposer:
             PatchProposal(edits=tuple(accepted)),
             response.record,
             tuple(errors),
+            raw_proposal=response.value,
         )
+
+
+def _validate_group_response(
+    proposal: PatchProposal,
+    record: LLMCallRecord,
+    sentence: SentenceSpan,
+    requests: list[FactCheckRequest],
+    verifications: list[VerificationResult],
+    evidence: list[EvidenceSpan],
+) -> PatchProposalOutcome:
+    """Validate each grouped edit against its own original evidence authorization.
+
+    Args:
+        proposal: Raw coordinated model proposal.
+        record: Model-call provenance.
+        sentence: Permitted immutable sentence.
+        requests: Claims available to the proposer.
+        verifications: Corresponding source judgments.
+        evidence: Exact source passages.
+
+    Returns:
+        Individually authorized edits and explicit rejection codes.
+    """
+    by_id = {
+        request.request_id: (request, verification)
+        for request, verification in zip(requests, verifications, strict=True)
+    }
+    accepted: list[SurgicalEdit] = []
+    errors: list[str] = []
+    for edit in proposal.edits:
+        pair = by_id.get(edit.request_id)
+        if pair is None:
+            errors.append(f"patch_identity_mismatch:{edit.patch_id}")
+            continue
+        edits, rejected = _validate_proposal(
+            PatchProposal(edits=(edit,)), sentence, pair[0], pair[1], evidence
+        )
+        accepted.extend(edits)
+        errors.extend(rejected)
+    return PatchProposalOutcome(
+        PatchProposal(edits=tuple(accepted)),
+        record,
+        tuple(errors),
+        raw_proposal=proposal,
+    )

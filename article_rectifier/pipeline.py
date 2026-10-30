@@ -127,6 +127,7 @@ class ArticleRectificationPipeline:
             "llm_records": [],
             "retry_count": 0,
             "status": "initialized",
+            "candidate_text": original_text,
             "errors": [],
         }
 
@@ -232,6 +233,15 @@ class ArticleRectificationPipeline:
             for state in states
             for item in state["verification_results"]
             if item.verdict in {Verdict.UNSUPPORTED, Verdict.UNCERTAIN}
+            or (
+                item.verdict is Verdict.CONTRADICTED
+                and item.request_id
+                not in {
+                    patch.edit.request_id
+                    for patch in state["patch_results"]
+                    if patch.status is PatchStatus.ACCEPTED
+                }
+            )
         ]
         records = [item for state in states for item in state["llm_records"]]
         errors = [error for state in states for error in state["errors"]]
