@@ -139,3 +139,27 @@ def test_prompt_excludes_annotations_and_source_truth(tmp_path: Path) -> None:
     assert "Error Annotations" not in serialized
     assert "West Bengal" not in serialized
     assert "Karnataka" in serialized
+
+
+def test_planner_normalizes_a_paraphrase_with_valid_sentence_offsets(
+    tmp_path: Path,
+) -> None:
+    """Retain a paraphrased claim only within its verified editable sentence.
+
+    Args:
+        tmp_path: Temporary project root.
+
+    Returns:
+        None.
+    """
+    content = """{"requests":[{"request_id":"req-place","sentence_id":"s0002",
+    "claim_text":"The film faced a ban in Karnataka",
+    "verification_question":"Where was it blocked?",
+    "search_query":"film blocked theaters state",
+    "error_category_hints":["geographic"],
+    "sentence_start":38,"sentence_end":66}]}"""
+    client, _ = make_client(tmp_path, content)
+    outcome = FactPlanner(client).plan("article_004", make_batch())
+    assert not outcome.errors
+    assert outcome.plan.requests[0].request_id == "req-place"
+    assert outcome.plan.requests[0].claim_text == "It was blocked in Karnataka."

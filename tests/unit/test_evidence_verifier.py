@@ -233,3 +233,28 @@ def test_error_classifications_are_preserved(
     verifier, _ = make_verifier(tmp_path, contradicted_result(error_types=[error_type]))
     outcome = verifier.verify(make_request(), [make_evidence()], SOURCE)
     assert outcome.result.error_types[0].value == error_type
+
+
+def test_long_paraphrased_correction_reaches_patch_stage(tmp_path: Path) -> None:
+    """Do not discard source-grounded corrections for nonverbatim grammar.
+
+    Args:
+        tmp_path: Temporary project root.
+
+    Returns:
+        None.
+    """
+    correction = (
+        "The film was blocked in West Bengal, not Karnataka, "
+        "according to theater owners."
+    )
+    verifier, _ = make_verifier(
+        tmp_path,
+        contradicted_result(proposed_factual_correction=correction),
+    )
+    outcome = verifier.verify(make_request(), [make_evidence()], SOURCE)
+    assert not outcome.errors
+    assert outcome.result.verdict is Verdict.CONTRADICTED
+    assert outcome.result.status is VerificationStatus.CORRECTION_AVAILABLE
+    # The independent patch validator must still reject any replacement
+    # whose value is not supported by the cited evidence.

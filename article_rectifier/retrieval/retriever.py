@@ -30,7 +30,7 @@ def _bm25_score(
     term_counts = Counter(passage.tokens)
     length_ratio = len(passage.tokens) / max(1.0, source_index.average_length)
     score = 0.0
-    for token in set(query_tokens):
+    for token in sorted(set(query_tokens)):
         frequency = term_counts.get(token, 0)
         if not frequency:
             continue

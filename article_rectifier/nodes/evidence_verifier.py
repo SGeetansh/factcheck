@@ -27,6 +27,7 @@ class VerificationOutcome:
     result: VerificationResult
     call_record: LLMCallRecord | None
     errors: tuple[str, ...] = ()
+    raw_result: VerificationResult | None = None
 
 
 def _unresolved_result(
@@ -73,22 +74,24 @@ def _evidence_is_relevant(
     return bool(request_tokens & evidence_tokens)
 
 
-def _correction_is_grounded(correction: str, evidence: list[EvidenceSpan]) -> bool:
-    """Check that every correction token appears in cited source text.
+def _correction_has_evidence_anchor(
+    correction: str, evidence: list[EvidenceSpan]
+) -> bool:
+    """Check that a suggested fact shares content with cited passages.
+
+    This is only a coarse gate. The patch validator must independently check
+    the exact replacement value before accepting an edit.
 
     Args:
-        correction: Model-proposed correct fact.
-        evidence: Evidence passages cited for the correction.
+        correction: Model-proposed factual correction, possibly a full sentence.
+        evidence: Exact evidence passages cited for that correction.
 
     Returns:
-        True when the correction is an exact phrase or token subset of evidence.
+        True when at least one non-stopword token overlaps the evidence.
     """
-    combined = " ".join(item.text for item in evidence).casefold()
-    if correction.casefold() in combined:
-        return True
     correction_tokens = set(tokenize(correction))
-    evidence_tokens = set(tokenize(combined))
-    return bool(correction_tokens) and correction_tokens <= evidence_tokens
+    evidence_tokens = set(tokenize(" ".join(item.text for item in evidence)))
+    return bool(correction_tokens & evidence_tokens)
 
 
 def _payload(
@@ -134,7 +137,7 @@ def _semantic_error(
     correction = result.proposed_factual_correction
     if correction:
         cited = [evidence_by_id[identifier] for identifier in result.evidence_ids]
-        if not _correction_is_grounded(correction, cited):
+        if not _correction_has_evidence_anchor(correction, cited):
             return "correction_not_in_evidence"
     return None
 
@@ -208,5 +211,9 @@ class EvidenceVerifier:
                 "Verification response failed source-grounding checks.",
                 tuple(item.evidence_id for item in valid),
             )
-            return VerificationOutcome(result, response.record, (error,))
-        return VerificationOutcome(response.value, response.record)
+            return VerificationOutcome(
+                result, response.record, (error,), raw_result=response.value
+            )
+        return VerificationOutcome(
+            response.value, response.record, raw_result=response.value
+        )

@@ -29,6 +29,7 @@ class PlannerOutcome:
     plan: FactCheckPlan
     call_record: LLMCallRecord | None
     errors: tuple[str, ...] = ()
+    raw_plan: FactCheckPlan | None = None
 
 
 def _anchor_error_type(anchor: str) -> ErrorType:
@@ -138,10 +139,14 @@ def _validate_model_plan(
     for request in plan.requests:
         sentence = sentences.get(request.sentence_id)
         valid = sentence is not None and _request_matches_sentence(request, sentence)
-        if valid:
-            accepted.append(request)
-        else:
+        if not valid:
             errors.append(f"invalid_request_boundary:{request.request_id}")
+            continue
+        # Models sometimes paraphrase a claim. Keep the verified sentence
+        # identity and offsets, but use only verbatim article text downstream.
+        if request.claim_text not in sentence.text:
+            request = request.model_copy(update={"claim_text": sentence.text})
+        accepted.append(request)
     return accepted, errors
 
 
@@ -161,7 +166,6 @@ def _request_matches_sentence(
     return (
         request.sentence_start == sentence.start
         and request.sentence_end == sentence.end
-        and request.claim_text in sentence.text
     )
 
 
@@ -233,5 +237,8 @@ class FactPlanner:
             model_requests, errors = _validate_model_plan(result.value, batch)
         plan = _merge_requests(model_requests, deterministic_anchor_requests(batch))
         return PlannerOutcome(
-            plan=plan, call_record=result.record, errors=tuple(errors)
+            plan=plan,
+            call_record=result.record,
+            errors=tuple(errors),
+            raw_plan=result.value,
         )
