@@ -22,6 +22,19 @@ def normalize_match_text(text: str) -> str:
     return " ".join(re.findall(r"[\w₹$%]+", normalized, flags=re.UNICODE))
 
 
+def contains_normalized_phrase(text: str, phrase: str) -> bool:
+    """Match a normalized factual phrase on token boundaries.
+
+    Args:
+        text: Normalized candidate text.
+        phrase: Normalized phrase to locate.
+
+    Returns:
+        True when the complete phrase occurs on token boundaries.
+    """
+    return bool(phrase) and f" {phrase} " in f" {text} "
+
+
 def issue_matches_annotation(issue: DetectedIssue, label: AnnotationLabel) -> bool:
     """Match an issue to an annotation using its factual phrase.
 
@@ -34,7 +47,9 @@ def issue_matches_annotation(issue: DetectedIssue, label: AnnotationLabel) -> bo
     """
     claim = normalize_match_text(issue.claim_text)
     error = normalize_match_text(label.error_text)
-    return bool(claim and error and (claim in error or error in claim))
+    return contains_normalized_phrase(claim, error) or contains_normalized_phrase(
+        error, claim
+    )
 
 
 def matched_annotation_ids(
@@ -114,8 +129,12 @@ def correction_recall(
     applicable = [label for label in annotations if label.applicable]
     normalized = normalize_match_text(rectified)
     corrected = sum(
-        normalize_match_text(label.error_text) not in normalized
-        and normalize_match_text(label.correction_text) in normalized
+        not contains_normalized_phrase(
+            normalized, normalize_match_text(label.error_text)
+        )
+        and contains_normalized_phrase(
+            normalized, normalize_match_text(label.correction_text)
+        )
         for label in applicable
     )
     value = 1.0 if not applicable else corrected / len(applicable)

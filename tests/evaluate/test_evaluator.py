@@ -63,6 +63,28 @@ def test_annotation_metrics_match_factual_phrase_not_location() -> None:
     assert report.correction_recall.value == 1.0
 
 
+def test_annotation_matching_respects_numeric_token_boundaries() -> None:
+    """Do not treat 50 as present inside a corrected value such as 250.
+
+    Returns:
+        None.
+    """
+    annotations = [
+        AnnotationLabel(
+            annotation_id="ann-1",
+            error_text="50",
+            correction_text="250",
+        )
+    ]
+    report = evaluate_article(
+        "source",
+        "There were 50 cases.",
+        "There were 250 cases.",
+        annotations=annotations,
+    )
+    assert report.correction_recall.value == 1.0
+
+
 def test_edit_precision_requires_independent_labels() -> None:
     """Exclude unreviewed patches from edit precision.
 
