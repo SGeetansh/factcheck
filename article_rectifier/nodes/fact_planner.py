@@ -182,20 +182,28 @@ def _merge_requests(
     Returns:
         One stable fact-check plan.
     """
-    merged = list(model_requests)
-    for anchor in anchors:
-        covered = any(
-            request.sentence_id == anchor.sentence_id
-            and any(
-                hint in request.error_category_hints
-                for hint in anchor.error_category_hints
-            )
-            and request.claim_text == anchor.claim_text
-            for request in model_requests
+    merged: dict[tuple[str, str], FactCheckRequest] = {}
+    for request in [*model_requests, *anchors]:
+        key = (request.sentence_id, " ".join(request.claim_text.casefold().split()))
+        previous = merged.get(key)
+        if previous is None:
+            merged[key] = request
+            continue
+        merged[key] = previous.model_copy(
+            update={
+                "verification_question": "; ".join(
+                    dict.fromkeys(
+                        [previous.verification_question, request.verification_question]
+                    )
+                ),
+                "error_category_hints": tuple(
+                    dict.fromkeys(
+                        [*previous.error_category_hints, *request.error_category_hints]
+                    )
+                ),
+            }
         )
-        if not covered:
-            merged.append(anchor)
-    return FactCheckPlan(requests=tuple(merged))
+    return FactCheckPlan(requests=tuple(merged.values()))
 
 
 class FactPlanner:

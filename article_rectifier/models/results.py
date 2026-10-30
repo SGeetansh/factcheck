@@ -25,6 +25,16 @@ class VerificationStatus(StrEnum):
     UNRESOLVED = "unresolved"
 
 
+class FactCorrection(BaseModel):
+    """Map one exact incorrect value to a source-supported replacement."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    original_value: str = Field(min_length=1)
+    correct_value: str
+    evidence_ids: tuple[str, ...] = Field(min_length=1)
+    error_type: ErrorType
+
+
 class VerificationResult(BaseModel):
     """Record a grounded verdict for one fact-check request."""
 
@@ -36,6 +46,7 @@ class VerificationResult(BaseModel):
     explanation: str = Field(min_length=1, max_length=500)
     error_types: tuple[ErrorType, ...] = ()
     proposed_factual_correction: str | None = None
+    corrections: tuple[FactCorrection, ...] = ()
     status: VerificationStatus
 
     @model_validator(mode="after")
@@ -56,9 +67,17 @@ class VerificationResult(BaseModel):
         if self.status is VerificationStatus.CORRECTION_AVAILABLE:
             if self.verdict is not Verdict.CONTRADICTED:
                 raise ValueError("Only contradicted claims can have a correction")
-            if not self.proposed_factual_correction:
+            if not self.proposed_factual_correction and not self.corrections:
                 raise ValueError("Available corrections require corrected facts")
-        elif self.proposed_factual_correction is not None:
+            if any(
+                not set(item.evidence_ids) <= set(self.evidence_ids)
+                or item.error_type not in self.error_types
+                for item in self.corrections
+            ):
+                raise ValueError(
+                    "Correction facts must use verified evidence and types"
+                )
+        elif self.proposed_factual_correction is not None or self.corrections:
             raise ValueError("Non-actionable verdicts cannot contain corrections")
         if (
             self.verdict is Verdict.SUPPORTED
