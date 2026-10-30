@@ -1,4 +1,6 @@
+# ==========================================
 # Python
+# ==========================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -23,19 +25,27 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# Virtual Environment
+# ==========================================
+# Virtual Environments
+# ==========================================
+.venv/
+.venv-grading/
 venv/
 env/
 ENV/
 env.bak/
 venv.bak/
 
-# Environment Variables
+# ==========================================
+# Environment Variables and Secrets
+# ==========================================
 .env
 .env.local
 .env.*.local
 
-# IDE
+# ==========================================
+# IDE and Operating System
+# ==========================================
 .vscode/
 .idea/
 *.swp
@@ -43,124 +53,57 @@ venv.bak/
 *~
 .DS_Store
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# ==========================================
+# Jupyter
+# ==========================================
+.ipynb_checkpoints/
 
-# Testing
+# ==========================================
+# Testing and Type Checking
+# ==========================================
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
 .tox/
 .nox/
-
-# mypy
 .mypy_cache/
 .dmypy.json
 dmypy.json
+.ruff_cache/
+.pyre/
+.pytype/
 
-# Logs
+# ==========================================
+# Logs, Caches and Debugging
+# ==========================================
 *.log
 audit_logs/
-.cache/article_rectifier/
+.cache/
+*.tmp
 
-# Project specific
+# ==========================================
+# Project-Specific Generated Files
+# ==========================================
 detected_errors/
-rectified_articles/article_011.txt
-rectified_articles/article_012.txt
-rectified_articles/article_013.txt
-rectified_articles/article_014.txt
-rectified_articles/article_015.txt
-rectified_articles/article_016.txt
-rectified_articles/article_017.txt
-rectified_articles/article_018.txt
-rectified_articles/article_019.txt
-rectified_articles/article_020.txt
-rectified_articles/article_021.txt
-rectified_articles/article_022.txt
-rectified_articles/article_023.txt
-rectified_articles/article_024.txt
-rectified_articles/article_025.txt
-rectified_articles/article_026.txt
-rectified_articles/article_027.txt
-rectified_articles/article_028.txt
-rectified_articles/article_029.txt
-rectified_articles/article_030.txt
-rectified_articles/article_031.txt
-rectified_articles/article_032.txt
-rectified_articles/article_033.txt
-rectified_articles/article_034.txt
-rectified_articles/article_035.txt
-rectified_articles/article_036.txt
-rectified_articles/article_037.txt
-rectified_articles/article_038.txt
-rectified_articles/article_039.txt
-rectified_articles/article_040.txt
-rectified_articles/article_041.txt
-rectified_articles/article_042.txt
-rectified_articles/article_043.txt
-rectified_articles/article_044.txt
-rectified_articles/article_045.txt
-rectified_articles/article_046.txt
-rectified_articles/article_047.txt
-rectified_articles/article_048.txt
-rectified_articles/article_049.txt
-rectified_articles/article_050.txt
-rectified_articles/article_051.txt
-rectified_articles/article_052.txt
-rectified_articles/article_053.txt
-rectified_articles/article_054.txt
-rectified_articles/article_055.txt
-rectified_articles/article_056.txt
-rectified_articles/article_057.txt
-rectified_articles/article_058.txt
-rectified_articles/article_059.txt
-rectified_articles/article_060.txt
-rectified_articles/article_061.txt
-rectified_articles/article_062.txt
-rectified_articles/article_063.txt
-rectified_articles/article_064.txt
-rectified_articles/article_065.txt
-rectified_articles/article_066.txt
-rectified_articles/article_067.txt
-rectified_articles/article_068.txt
-rectified_articles/article_069.txt
-rectified_articles/article_070.txt
-rectified_articles/article_071.txt
-rectified_articles/article_072.txt
-rectified_articles/article_073.txt
-rectified_articles/article_074.txt
-rectified_articles/article_075.txt
-rectified_articles/article_076.txt
-rectified_articles/article_077.txt
-rectified_articles/article_078.txt
-rectified_articles/article_079.txt
-rectified_articles/article_080.txt
-rectified_articles/article_081.txt
-rectified_articles/article_082.txt
-rectified_articles/article_083.txt
-rectified_articles/article_084.txt
-rectified_articles/article_085.txt
-rectified_articles/article_086.txt
-rectified_articles/article_087.txt
-rectified_articles/article_088.txt
-rectified_articles/article_089.txt
-rectified_articles/article_090.txt
-rectified_articles/article_091.txt
-rectified_articles/article_092.txt
-rectified_articles/article_093.txt
-rectified_articles/article_094.txt
-rectified_articles/article_095.txt
-rectified_articles/article_096.txt
-rectified_articles/article_097.txt
-rectified_articles/article_098.txt
-rectified_articles/article_099.txt
-rectified_articles/article_100.txt
-rectified_articles/article_101.txt
-rectified_articles/article_102.txt
-rectified_articles/article_103.txt
-rectified_articles/article_104.txt
 
-# Generated evaluation results
+# Preserve the 10 human-corrected reference articles:
+# article_001.txt through article_010.txt
+
+# Ignore generated rectifications (011–104)
+rectified_articles/article_01[1-9].txt
+rectified_articles/article_0[2-9][0-9].txt
+rectified_articles/article_10[0-4].txt
+
+# ==========================================
+# Evaluation Results
+# ==========================================
 evaluate/reports/*
 !evaluate/reports/.gitkeep
-.venv/
+
+# ==========================================
+# Keep Dependency Files Tracked
+# ==========================================
+!pyproject.toml
+!uv.lock
+!requirements.txt
