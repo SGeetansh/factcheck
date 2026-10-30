@@ -37,6 +37,21 @@ def test_sanitizer_preserves_legitimate_marker_text() -> None:
     assert sanitize_generated_article(heading) == heading
 
 
+def test_sanitizer_removes_supplied_malformed_json_and_code_fence() -> None:
+    """Remove recognizable trailing metadata even when its generator escaped it badly.
+
+    Returns:
+        None.
+    """
+    malformed = (
+        "Article.\n**Error Annotations:**\n"
+        '[{"location":"p1","error": \\"old\\", "correction":"new"}]'
+    )
+    fenced_empty = "Article.\n**Error Annotations:**\n[]\n```"
+    assert sanitize_generated_article(malformed) == "Article.\n"
+    assert sanitize_generated_article(fenced_empty) == "Article.\n"
+
+
 def test_source_sanitizer_keeps_published_metadata() -> None:
     """Remove only the administrative marker from source content.
 

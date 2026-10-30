@@ -17,10 +17,16 @@ def _is_annotation_payload(payload: str) -> bool:
     Returns:
         True for a JSON list of annotation-like objects.
     """
+    candidate = payload.removesuffix("```").rstrip()
     try:
-        parsed = json.loads(payload)
+        parsed = json.loads(candidate)
     except json.JSONDecodeError:
-        return False
+        return (
+            candidate.startswith("[")
+            and candidate.endswith("]")
+            and '"location"' in candidate
+            and '"correction"' in candidate
+        )
     if not isinstance(parsed, list):
         return False
     return all(
