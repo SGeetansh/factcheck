@@ -110,3 +110,21 @@ class PatchResult(BaseModel):
         elif self.status is not PatchStatus.PROPOSED and not self.reason:
             raise ValueError("Non-accepted patch dispositions require a reason")
         return self
+
+
+class PatchAuditRecord(BaseModel):
+    """Provide human-inspectable provenance for one accepted or rejected edit."""
+
+    model_config = ConfigDict(frozen=True)
+
+    patch_id: str
+    sentence_id: str
+    original_text: str
+    replacement_text: str
+    error_types: tuple[ErrorType, ...]
+    evidence_ids: tuple[str, ...]
+    verification_verdict: Verdict
+    validation_status: PatchStatus
+    reason: str | None = None
+    start: int | None = Field(default=None, ge=0)
+    end: int | None = Field(default=None, ge=0)

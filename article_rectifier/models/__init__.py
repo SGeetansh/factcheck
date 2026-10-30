@@ -5,6 +5,7 @@ from article_rectifier.models.claims import ErrorType, FactCheckPlan, FactCheckR
 from article_rectifier.models.edits import EditOperation, PatchProposal, SurgicalEdit
 from article_rectifier.models.evidence import EvidenceSpan, RetrievalStrategy
 from article_rectifier.models.results import (
+    PatchAuditRecord,
     PatchResult,
     PatchStatus,
     Verdict,
@@ -20,6 +21,7 @@ __all__ = [
     "EvidenceSpan",
     "FactCheckPlan",
     "FactCheckRequest",
+    "PatchAuditRecord",
     "PatchProposal",
     "PatchResult",
     "PatchStatus",
