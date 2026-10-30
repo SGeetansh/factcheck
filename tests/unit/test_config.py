@@ -54,12 +54,18 @@ def test_secret_is_masked() -> None:
     assert settings.require_api_key().get_secret_value() == "private-key"
 
 
-def test_api_key_is_required_only_for_live_calls() -> None:
+def test_api_key_is_required_only_for_live_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Allow offline construction and fail on explicit key access.
+
+    Args:
+        monkeypatch: Pytest environment mutation helper.
 
     Returns:
         None.
     """
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
     settings = Settings(_env_file=None)
     with pytest.raises(ValueError, match="LLM_API_KEY"):
         settings.require_api_key()

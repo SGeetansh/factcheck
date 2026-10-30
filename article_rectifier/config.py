@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     max_run_cost_usd: float = Field(default=2.70, gt=0.0, le=3.0)
     minimum_budget_reserve_usd: float = Field(default=0.20, ge=0.0, le=3.0)
     enable_llm_cache: bool = True
+    use_native_structured_output: bool = False
     enable_llm_body_logging: bool = False
     log_level: str = Field(default="INFO", pattern=r"^(DEBUG|INFO|WARNING|ERROR)$")
     project_root: Path = PROJECT_ROOT
