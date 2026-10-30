@@ -1,17 +1,17 @@
-"""One LiteLLM adapter for schema validation, retries, caching, and usage."""
+"""Centralized LLM adapter for schema validation, retries, caching, and usage."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import time
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
-from litellm import completion
 from litellm.exceptions import (
     APIConnectionError,
     InternalServerError,
@@ -19,9 +19,28 @@ from litellm.exceptions import (
     ServiceUnavailableError,
     Timeout,
 )
+from litellm.exceptions import (
+    APIError as LiteLLMAPIError,
+)
+from openai import (
+    APIConnectionError as OpenAIConnectionError,
+)
+from openai import (
+    APIError as OpenAIAPIError,
+)
+from openai import (
+    APITimeoutError as OpenAITimeoutError,
+)
+from openai import (
+    InternalServerError as OpenAIInternalServerError,
+)
+from openai import (
+    RateLimitError as OpenAIRateLimitError,
+)
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from article_rectifier.config import Settings
+from article_rectifier.llm.openai_transport import openai_completion
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 CompletionFunction = Callable[..., object]
@@ -31,6 +50,10 @@ RETRYABLE_ERRORS = (
     RateLimitError,
     ServiceUnavailableError,
     Timeout,
+    OpenAIConnectionError,
+    OpenAITimeoutError,
+    OpenAIInternalServerError,
+    OpenAIRateLimitError,
     ConnectionError,
     TimeoutError,
 )
@@ -45,6 +68,7 @@ class LLMResponseStatus(StrEnum):
     EMPTY_RESPONSE = "empty_response"
     TRANSPORT_FAILURE = "transport_failure"
     BUDGET_BLOCKED = "budget_blocked"
+    OFFLINE_CACHE_MISS = "offline_cache_miss"
 
 
 class LLMCallRecord(BaseModel):
@@ -62,6 +86,7 @@ class LLMCallRecord(BaseModel):
     output_tokens: int = Field(default=0, ge=0)
     latency_seconds: float = Field(ge=0.0)
     retry_count: int = Field(default=0, ge=0)
+    transport_calls: int | None = Field(default=None, ge=0)
     provider_cost_usd: float | None = Field(default=None, ge=0.0)
     error_code: str | None = None
 
@@ -149,12 +174,12 @@ def _extract_usage(response: object) -> tuple[int, int, float | None]:
 
 
 class LLMClient:
-    """Make bounded LiteLLM requests and validate every structured response."""
+    """Make bounded proxy requests and validate every structured response."""
 
     def __init__(
         self,
         settings: Settings,
-        completion_function: CompletionFunction = completion,
+        completion_function: CompletionFunction = openai_completion,
         sleep_function: Callable[[float], None] = time.sleep,
     ) -> None:
         """Initialize the adapter without making a network request.
@@ -168,6 +193,29 @@ class LLMClient:
         self._completion = completion_function
         self._sleep = sleep_function
         self._provider_cost_usd = 0.0
+        self.trace_context = {
+            "run_id": uuid.uuid4().hex,
+            "article_id": "unassigned",
+            "batch_id": "unassigned",
+        }
+        self._attempt_responses: list[object] = []
+        self._attempt_count = 0
+        self._request_metadata: dict[str, str] = {}
+
+    def _trace_attempt(self, stage: str, **details: Any) -> None:
+        """Persist per-attempt usage; include response diagnostics only in debug mode.
+
+        Args:
+            stage: Transport or parsing event name.
+            **details: Non-secret request metadata and observations.
+        """
+        from article_rectifier.observability.debug import DebugTrace
+
+        DebugTrace(self.settings.audit_directory / "calls").record(
+            **self.trace_context,
+            stage=stage,
+            details={**self._request_metadata, **details},
+        )
 
     def _cache_key(
         self,
@@ -215,7 +263,7 @@ class LLMClient:
         temporary.replace(path)
 
     def _request_kwargs(self, messages: list[dict[str, str]]) -> dict[str, object]:
-        """Build LiteLLM keyword arguments without logging the API key."""
+        """Build proxy transport arguments without logging the API key."""
         values: dict[str, object] = {
             "model": self.settings.llm_model_name,
             "messages": messages,
@@ -234,12 +282,44 @@ class LLMClient:
     ) -> tuple[object | None, int, str | None]:
         """Call the transport with bounded exponential backoff."""
         for retry in range(self.settings.max_llm_retries + 1):
+            started = time.monotonic()
+            self._attempt_count += 1
+            attempt_id = uuid.uuid4().hex
+            self._trace_attempt("llm_call_started", attempt_id=attempt_id, retry=retry)
             try:
-                return self._completion(**self._request_kwargs(messages)), retry, None
+                response = self._completion(**self._request_kwargs(messages))
+                self._attempt_responses.append(response)
+                inputs, outputs, cost = _extract_usage(response)
+                self._trace_attempt(
+                    "llm_call_finished",
+                    attempt_id=attempt_id,
+                    latency_seconds=time.monotonic() - started,
+                    input_tokens=inputs,
+                    output_tokens=outputs,
+                    provider_cost_usd=cost,
+                    status="response_received",
+                )
+                return response, retry, None
             except RETRYABLE_ERRORS as error:
+                self._trace_attempt(
+                    "llm_call_failed",
+                    attempt_id=attempt_id,
+                    latency_seconds=time.monotonic() - started,
+                    error_type=type(error).__name__,
+                    retryable=True,
+                )
                 if retry == self.settings.max_llm_retries:
                     return None, retry, type(error).__name__
                 self._sleep(min(2**retry, 8))
+            except (OpenAIAPIError, LiteLLMAPIError) as error:
+                self._trace_attempt(
+                    "llm_call_failed",
+                    attempt_id=attempt_id,
+                    latency_seconds=time.monotonic() - started,
+                    error_type=type(error).__name__,
+                    retryable=False,
+                )
+                return None, retry, type(error).__name__
         return None, self.settings.max_llm_retries, "transport_failure"
 
     def _record(
@@ -256,7 +336,13 @@ class LLMClient:
         error_code: str | None = None,
     ) -> LLMCallRecord:
         """Build a complete usage and status record."""
-        tokens = _extract_usage(response) if response is not None else (0, 0, None)
+        usages = [_extract_usage(item) for item in self._attempt_responses]
+        costs = [item[2] for item in usages if item[2] is not None]
+        tokens = (
+            sum(item[0] for item in usages),
+            sum(item[1] for item in usages),
+            sum(costs) if costs else None,
+        )
         if tokens[2] is not None:
             self._provider_cost_usd += tokens[2]
         return LLMCallRecord(
@@ -270,6 +356,7 @@ class LLMClient:
             output_tokens=tokens[1],
             latency_seconds=time.monotonic() - started,
             retry_count=retry_count,
+            transport_calls=self._attempt_count,
             provider_cost_usd=tokens[2],
             error_code=error_code,
         )
@@ -284,7 +371,15 @@ class LLMClient:
     ) -> StructuredLLMResult[SchemaT]:
         """Request JSON, validate it, and permit one focused schema repair."""
         started = time.monotonic()
+        self._attempt_responses = []
+        self._attempt_count = 0
         key = self._cache_key(messages, prompt_version, schema, schema_version)
+        self._request_metadata = {
+            "input_fingerprint": key,
+            "prompt_version": prompt_version,
+            "schema": schema.__name__,
+            "model": self.settings.llm_model_name,
+        }
         cached = self._load_cache(key, schema)
         if cached is not None:
             record = self._record(
@@ -296,6 +391,18 @@ class LLMClient:
                 started=started,
             )
             return StructuredLLMResult(cached, record)
+        if self.settings.rectifier_cache_only:
+            return self._failure(
+                LLMResponseStatus.OFFLINE_CACHE_MISS,
+                "cache_miss_offline",
+                schema,
+                prompt_version,
+                schema_version,
+                key,
+                started,
+                0,
+                None,
+            )
         if self._provider_cost_usd >= self.settings.max_run_cost_usd:
             return self._failure(
                 LLMResponseStatus.BUDGET_BLOCKED,
@@ -339,6 +446,21 @@ class LLMClient:
                     None,
                 )
             value, status, error_code, content = self._parse_response(response, schema)
+            if self.settings.rectifier_debug and status is not None:
+                from article_rectifier.observability.debug import DebugTrace
+
+                DebugTrace(self.settings.audit_directory / "debug").record(
+                    **self.trace_context,
+                    stage="llm_parse_failure",
+                    details={
+                        "input_fingerprint": cache_key,
+                        "prompt_version": prompt_version,
+                        "schema": schema.__name__,
+                        "status": status,
+                        "error_code": error_code,
+                        "raw_content": content,
+                    },
+                )
             if status is LLMResponseStatus.EMPTY_RESPONSE:
                 return self._context_failure(
                     context,
@@ -453,7 +575,9 @@ class LLMClient:
             return None, LLMResponseStatus.EMPTY_RESPONSE, "empty_content", content
         try:
             return schema.model_validate_json(content), None, None, content
-        except (ValidationError, ValueError):
+        except (ValidationError, ValueError) as error:
+            if self.settings.rectifier_debug:
+                self._trace_attempt("llm_schema_rejected", error_details=str(error))
             return (
                 None,
                 LLMResponseStatus.INVALID_RESPONSE,
@@ -472,6 +596,10 @@ class LLMClient:
             "The previous response failed schema validation. Return only one JSON "
             f"object matching this schema: {json.dumps(schema.model_json_schema())}"
         )
+        try:
+            schema.model_validate_json(invalid_content)
+        except (ValidationError, ValueError) as error:
+            instruction += f"\nValidation errors to fix: {error}"
         return [
             *messages,
             {"role": "assistant", "content": invalid_content},

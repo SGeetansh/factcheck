@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
     "litellm==1.103.10",
+    "openai==2.54.0",
     "langgraph==1.2.18",
     "pydantic==2.14.2",
     "pydantic-settings==2.15.0",

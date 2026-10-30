@@ -646,6 +646,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "langgraph" },
     { name = "litellm" },
+    { name = "openai" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
@@ -662,6 +663,7 @@ dev = [
 requires-dist = [
     { name = "langgraph", specifier = "==1.2.18" },
     { name = "litellm", specifier = "==1.103.10" },
+    { name = "openai", specifier = "==2.54.0" },
     { name = "pydantic", specifier = "==2.14.2" },
     { name = "pydantic-settings", specifier = "==2.15.0" },
     { name = "python-dotenv", specifier = "==1.0.0" },

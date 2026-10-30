@@ -221,3 +221,22 @@ def test_observed_run_cost_blocks_later_uncached_call(tmp_path: Path) -> None:
     assert not second.succeeded
     assert second.record.status is LLMResponseStatus.BUDGET_BLOCKED
     assert len(transport.calls) == 1
+
+
+def test_offline_cache_mode_never_calls_transport(tmp_path: Path) -> None:
+    """Prevent expensive network calls when a cache entry is missing.
+
+    Args:
+        tmp_path: Temporary isolated cache directory.
+    """
+    transport = MockLLMTransport([])
+    client = LLMClient(settings(tmp_path, RECTIFIER_CACHE_ONLY=True), transport)
+    result = client.complete_structured(
+        [{"role": "user", "content": "Uncached question"}],
+        Answer,
+        prompt_version="offline-v1",
+    )
+    assert result.value is None
+    assert result.record.status is LLMResponseStatus.OFFLINE_CACHE_MISS
+    assert result.record.error_code == "cache_miss_offline"
+    assert not transport.calls

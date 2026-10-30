@@ -26,7 +26,7 @@ class Settings(BaseSettings):
         alias="LLM_API_BASE",
     )
     llm_model_name: str = Field(
-        default="groq/openai/gpt-oss-120b",
+        default="gpt-oss-120b",
         alias="LLM_MODEL_NAME",
     )
     batch_size: int = Field(default=3, ge=1, le=10)
@@ -34,13 +34,15 @@ class Settings(BaseSettings):
     max_patch_retries: int = Field(default=1, ge=0, le=3)
     max_llm_retries: int = Field(default=2, ge=0, le=5)
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
-    enable_validation_llm: bool = False
+    enable_validation_llm: bool = True
     soft_patch_character_limit: int = Field(default=120, ge=1, le=1000)
     llm_timeout_seconds: float = Field(default=45.0, gt=0.0, le=300.0)
     max_concurrency: int = Field(default=1, ge=1, le=8)
     max_run_cost_usd: float = Field(default=2.70, gt=0.0, le=3.0)
     minimum_budget_reserve_usd: float = Field(default=0.20, ge=0.0, le=3.0)
     enable_llm_cache: bool = True
+    rectifier_cache_only: bool = Field(default=False, alias="RECTIFIER_CACHE_ONLY")
+    rectifier_debug: bool = Field(default=False, alias="RECTIFIER_DEBUG")
     use_native_structured_output: bool = False
     enable_llm_body_logging: bool = False
     log_level: str = Field(default="INFO", pattern=r"^(DEBUG|INFO|WARNING|ERROR)$")

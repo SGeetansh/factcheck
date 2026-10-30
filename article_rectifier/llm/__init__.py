@@ -1,4 +1,4 @@
-"""Centralized validated access to the configured LiteLLM endpoint."""
+"""Centralized validated access to the supplied OpenAI-compatible proxy."""
 
 from article_rectifier.llm.client import (
     LLMCallRecord,

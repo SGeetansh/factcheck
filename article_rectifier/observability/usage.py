@@ -33,7 +33,10 @@ def summarize_usage(records: list[LLMCallRecord]) -> UsageSummary:
         item.provider_cost_usd for item in records if item.provider_cost_usd is not None
     ]
     return UsageSummary(
-        llm_calls=len(records),
+        llm_calls=sum(
+            item.transport_calls if item.transport_calls is not None else 1
+            for item in records
+        ),
         input_tokens=sum(item.input_tokens for item in records),
         output_tokens=sum(item.output_tokens for item in records),
         retries=sum(item.retry_count for item in records),
