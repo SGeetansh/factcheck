@@ -159,6 +159,7 @@ def pipeline(
         max_llm_retries=0,
         batch_size=batch_size,
         enable_validation_llm=False,
+        batch_verification=False,
         _env_file=None,
     )
     return (
@@ -472,6 +473,7 @@ def test_semantic_rejection_is_bounded_and_preserves_other_accepted_edits(
             "verdict": "uncertain",
             "evidence_ids": ["src-article-test-0001"],
             "explanation": "The edited relationship is not established.",
+            "failed_patch_ids": ["req-place:patch-place"],
         }
     )
     supported = response(
@@ -482,8 +484,11 @@ def test_semantic_rejection_is_bounded_and_preserves_other_accepted_edits(
         }
     )
     initial = two_error_outcomes()
+    retry_review = json.loads(uncertain["choices"][0]["message"]["content"])
+    retry_review["failed_patch_ids"] = ["req-place:retry1:patch-place"]
     service, transport = pipeline(
-        tmp_path, [*initial, uncertain, supported, initial[3], uncertain, supported]
+        tmp_path,
+        [*initial, uncertain, supported, initial[3], response(retry_review), supported],
     )
     service.settings.enable_validation_llm = True
     result = service.rectify(

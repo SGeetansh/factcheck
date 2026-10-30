@@ -10,6 +10,7 @@ from article_rectifier.models.article import SentenceSpan
 from article_rectifier.models.edits import EditOperation, SurgicalEdit
 from article_rectifier.models.evidence import EvidenceSpan
 from article_rectifier.models.results import PatchResult, PatchStatus
+from article_rectifier.nodes.numeric_guard import numeric_error
 from article_rectifier.retrieval.source_index import tokenize
 
 
@@ -238,6 +239,7 @@ def validate_patches(
     retry_count: int = 0,
     max_patch_retries: int = 1,
     soft_patch_character_limit: int = 120,
+    semantic_review_enabled: bool = False,
 ) -> ValidationExecution:
     """Validate patches and rebuild output from only final accepted edits.
 
@@ -251,6 +253,7 @@ def validate_patches(
         retry_count: Prior targeted proposal retries.
         max_patch_retries: Maximum permitted retries.
         soft_patch_character_limit: Warning threshold for large edits.
+        semantic_review_enabled: Defer prose entailment to the sentence reviewer.
 
     Returns:
         Safe reconstructed output and final patch statuses.
@@ -279,6 +282,7 @@ def validate_patches(
         retry_count,
         max_patch_retries,
         soft_patch_character_limit,
+        semantic_review_enabled,
     )
 
 
@@ -291,6 +295,7 @@ def _validate_individual_patches(
     retry_count: int,
     max_patch_retries: int,
     soft_patch_character_limit: int,
+    semantic_review_enabled: bool = False,
 ) -> ValidationExecution:
     """Validate evidence and corrected facts for each accepted patch."""
     sentence_map = {item.sentence_id: item for item in sentences}
@@ -302,7 +307,9 @@ def _validate_individual_patches(
             final_results.append(result)
             continue
         cited, error = _cited_evidence(result.edit, evidence_map, source_text)
-        if error is None:
+        if error is None and semantic_review_enabled:
+            error = numeric_error(result.edit, cited)
+        elif error is None:
             error = _factual_error(
                 original_text,
                 result.edit,

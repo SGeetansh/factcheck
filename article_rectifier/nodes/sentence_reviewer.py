@@ -5,7 +5,7 @@ This model judgment is a pipeline gate, not an independent factuality metric.
 
 import json
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from article_rectifier.editing.diff_guard import apply_resolved_edits
 from article_rectifier.llm.client import LLMClient, StructuredLLMResult
@@ -22,6 +22,16 @@ class SentenceReview(BaseModel):
     verdict: Verdict
     evidence_ids: tuple[str, ...]
     explanation: str = Field(min_length=1, max_length=1200)
+    failed_patch_ids: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def check_failed_ids(self) -> "SentenceReview":
+        """Require targeted failures so valid neighboring edits are retained."""
+        if self.verdict is not Verdict.SUPPORTED and not self.failed_patch_ids:
+            raise ValueError("Non-supported reviews must identify failed_patch_ids")
+        if self.verdict is Verdict.SUPPORTED and self.failed_patch_ids:
+            raise ValueError("Supported reviews cannot contain failed_patch_ids")
+        return self
 
 
 def review_sentence(
@@ -70,7 +80,10 @@ def review_sentence(
         "wrong or introduces an incorrect relationship; explain the smallest needed "
         "repair. Use uncertain for conflicting or insufficient evidence. Do not demand "
         "style changes or changes to unrelated claims. A missing fact alone is not a "
-        "contradiction. Cite supplied evidence IDs. Return JSON matching the schema."
+        "contradiction. Cite supplied evidence IDs. Identify only the failed patch IDs "
+        "in failed_patch_ids; use [] for supported. Check every patch independently "
+        "within the complete sentence; do not reject a correct patch because another "
+        "patch is wrong. Return JSON matching the schema."
     )
     return client.complete_structured(
         [
@@ -78,5 +91,5 @@ def review_sentence(
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ],
         SentenceReview,
-        prompt_version="sentence-review-v1",
+        prompt_version="sentence-review-v2",
     )

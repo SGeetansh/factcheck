@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 
 from article_rectifier.llm.client import LLMCallRecord, LLMClient
@@ -40,7 +41,10 @@ def _is_actionable(verification: VerificationResult) -> bool:
     return (
         verification.verdict is Verdict.CONTRADICTED
         and verification.status is VerificationStatus.CORRECTION_AVAILABLE
-        and verification.proposed_factual_correction is not None
+        and (
+            verification.proposed_factual_correction is not None
+            or bool(verification.corrections)
+        )
         and bool(verification.error_types)
     )
 
@@ -198,6 +202,9 @@ class PatchProposer:
         Returns:
             Non-conflicting proposals, each authorized by its own verification.
         """
+        direct = _fact_pair_proposal(sentence, verifications)
+        if direct is not None and not retry_feedback:
+            return PatchProposalOutcome(direct, None)
         if len(verifications) == 1:
             return self.propose(
                 sentence,
@@ -357,3 +364,70 @@ def _validate_group_response(
         tuple(errors),
         raw_proposal=proposal,
     )
+
+
+def _fact_pair_proposal(
+    sentence: SentenceSpan, verifications: list[VerificationResult]
+) -> PatchProposal | None:
+    """Build exact, independent replacements from verified value pairs.
+
+    Args:
+        sentence: Immutable editable sentence.
+        verifications: Actionable results containing structured facts.
+
+    Returns:
+        Deduplicated surgical edits, or None when ambiguity needs model reasoning.
+    """
+    if not verifications or any(not item.corrections for item in verifications):
+        return None
+    edits: dict[tuple[str, str], SurgicalEdit] = {}
+    targets: dict[str, str] = {}
+    for verification in verifications:
+        for fact in verification.corrections:
+            if bool(re.search(r"\d", fact.original_value)) != bool(
+                re.search(r"\d", fact.correct_value)
+            ):
+                return None
+            if len(fact.correct_value) > len(fact.original_value) + 30:
+                return None
+            if sentence.text.count(fact.original_value) != 1:
+                return None
+            previous = targets.get(fact.original_value)
+            if previous is not None and previous != fact.correct_value:
+                return None
+            if fact.original_value == fact.correct_value:
+                continue
+            targets[fact.original_value] = fact.correct_value
+            key = (fact.original_value, fact.correct_value)
+            edits.setdefault(
+                key,
+                SurgicalEdit(
+                    patch_id=f"{verification.request_id}-fact-{len(edits) + 1}",
+                    request_id=verification.request_id,
+                    sentence_id=sentence.sentence_id,
+                    operation=(
+                        EditOperation.REPLACE
+                        if fact.correct_value
+                        else EditOperation.DELETE
+                    ),
+                    original_text=fact.original_value,
+                    replacement_text=fact.correct_value,
+                    evidence_ids=fact.evidence_ids,
+                    error_type=fact.error_type,
+                    explanation=verification.explanation,
+                ),
+            )
+    spans = [
+        (
+            sentence.text.index(edit.original_text),
+            sentence.text.index(edit.original_text) + len(edit.original_text),
+        )
+        for edit in edits.values()
+    ]
+    if any(
+        a < d and c < b
+        for index, (a, b) in enumerate(spans)
+        for c, d in spans[index + 1 :]
+    ):
+        return None
+    return PatchProposal(edits=tuple(edits.values()))

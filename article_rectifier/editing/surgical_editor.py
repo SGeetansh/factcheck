@@ -8,6 +8,7 @@ from article_rectifier.editing.diff_guard import (
     apply_resolved_edits,
     conflicting_patch_ids,
 )
+from article_rectifier.editing.minimal_edits import minimize_resolved_edit
 from article_rectifier.editing.span_resolver import resolve_edit
 from article_rectifier.models.article import SentenceSpan
 from article_rectifier.models.edits import SurgicalEdit
@@ -127,7 +128,9 @@ def _resolve_authorized(
             rejected.append(_rejected(edit, error or "missing permitted sentence"))
             continue
         try:
-            resolved.append(resolve_edit(original_text, sentence, edit))
+            resolved.extend(
+                minimize_resolved_edit(resolve_edit(original_text, sentence, edit))
+            )
         except ValueError as exception:
             rejected.append(_rejected(edit, str(exception)))
     return resolved, rejected
@@ -166,6 +169,12 @@ def execute_edits(
         source_text,
     )
     conflicts = conflicting_patch_ids(resolved)
+    conflicted_parents = {identifier.rsplit(":part", 1)[0] for identifier in conflicts}
+    conflicts.update(
+        edit.patch_id
+        for edit in resolved
+        if edit.patch_id.rsplit(":part", 1)[0] in conflicted_parents
+    )
     accepted_edits = [edit for edit in resolved if edit.patch_id not in conflicts]
     rejected.extend(
         _rejected(edit, "patch overlaps another proposed edit")

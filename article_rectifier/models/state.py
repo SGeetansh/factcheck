@@ -24,6 +24,7 @@ class BatchState(TypedDict):
     retrieved_evidence: dict[str, list[EvidenceSpan]]
     verification_results: list[VerificationResult]
     proposed_edits: list[SurgicalEdit]
+    proposal_failures: dict[str, str]
     patch_results: list[PatchResult]
     patch_history: list[PatchResult]
     llm_records: list[LLMCallRecord]

@@ -122,6 +122,7 @@ class ArticleRectificationPipeline:
             "retrieved_evidence": {},
             "verification_results": [],
             "proposed_edits": [],
+            "proposal_failures": {},
             "patch_results": [],
             "patch_history": [],
             "llm_records": [],

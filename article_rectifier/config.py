@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     max_llm_retries: int = Field(default=2, ge=0, le=5)
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     enable_validation_llm: bool = True
+    batch_verification: bool = True
     soft_patch_character_limit: int = Field(default=120, ge=1, le=1000)
     llm_timeout_seconds: float = Field(default=45.0, gt=0.0, le=300.0)
     max_concurrency: int = Field(default=1, ge=1, le=8)

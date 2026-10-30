@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -12,12 +13,15 @@ from langgraph.graph.state import CompiledStateGraph
 
 from article_rectifier.config import Settings
 from article_rectifier.editing.diff_guard import apply_resolved_edits
+from article_rectifier.editing.minimal_edits import changed_fragments
+from article_rectifier.editing.retry import merge_retry_results
 from article_rectifier.editing.surgical_editor import execute_edits
 from article_rectifier.llm.client import LLMCallRecord, LLMClient
 from article_rectifier.models.article import SentenceSpan
-from article_rectifier.models.evidence import EvidenceSpan
+from article_rectifier.models.evidence import EvidenceSpan, RetrievalStrategy
 from article_rectifier.models.results import PatchStatus, Verdict, VerificationResult
 from article_rectifier.models.state import BatchState
+from article_rectifier.nodes.batch_verifier import verify_batch
 from article_rectifier.nodes.evidence_verifier import EvidenceVerifier
 from article_rectifier.nodes.fact_planner import FactPlanner
 from article_rectifier.nodes.patch_proposer import PatchProposer, _is_actionable
@@ -291,6 +295,8 @@ class BatchWorkflow:
 
     def _verify(self, state: BatchState) -> dict[str, object]:
         """Verify every request against its exact retrieved passages."""
+        if self.settings.batch_verification:
+            return self._verify_together(state)
         started = time.monotonic()
         verifications = []
         records = list(state["llm_records"])
@@ -376,20 +382,132 @@ class BatchWorkflow:
             "errors": errors,
         }
 
+    def _verify_together(self, state: BatchState) -> dict[str, object]:
+        """Retrieve counter-evidence first and verify the batch in one model call.
+
+        Args:
+            state: Planned requests and deterministic primary retrieval results.
+
+        Returns:
+            Validated judgments, expanded evidence, errors, and usage records.
+        """
+        started = time.monotonic()
+        retrieved = dict(state["retrieved_evidence"])
+        for request in state["fact_requests"]:
+            expanded = search_source(
+                f"{request.verification_question} {request.claim_text}",
+                state["source_index"],
+                self.settings.retrieval_top_k,
+            )
+            passages = {
+                item.evidence_id: item for item in retrieved[request.request_id]
+            }
+            passages.update({item.evidence_id: item for item in expanded})
+            retrieved[request.request_id] = list(passages.values())
+        batch = state["batch"]
+        context = "\n".join(
+            item.text
+            for item in [batch.context_before, *batch.sentences, batch.context_after]
+            if item is not None
+        )
+        outcome = verify_batch(
+            self.llm_client,
+            state["fact_requests"],
+            retrieved,
+            state["source_text"],
+            article_context=context,
+        )
+        initial_record = outcome.record
+        unknown = {
+            item.request_id
+            for item in outcome.results
+            if item.verdict in {Verdict.UNSUPPORTED, Verdict.UNCERTAIN}
+        }
+        recovery_record = None
+        if unknown:
+            source = state["source_text"]
+            # Bound the broader context and retain exact source offsets.
+            end = (
+                len(source) if len(source) <= 16000 else source.rfind("\n\n", 0, 16000)
+            )
+            end = end if end > 0 else min(16000, len(source))
+            broad = EvidenceSpan(
+                evidence_id=f"src-{state['article_id']}-context-{end}",
+                source_article_id=state["article_id"],
+                text=source[:end],
+                start=0,
+                end=end,
+                retrieval_score=0,
+                retrieval_strategy=RetrievalStrategy.SOURCE_CENTRIC,
+            )
+            for request_id in sorted(unknown):
+                retrieved[request_id] = [*retrieved[request_id], broad]
+            recovery = verify_batch(
+                self.llm_client,
+                [item for item in state["fact_requests"] if item.request_id in unknown],
+                {key: retrieved[key] for key in sorted(unknown)},
+                source,
+                recovery=True,
+                article_context=context,
+            )
+            recovery_record = recovery.record
+            replacements = {item.request_id: item for item in recovery.results}
+            self._trace(
+                state,
+                "verification_recovery",
+                initial_results=outcome.results,
+                recovery_results=recovery.results,
+                llm_record=recovery.record,
+            )
+            outcome = type(outcome)(
+                tuple(
+                    replacements.get(item.request_id, item) for item in outcome.results
+                ),
+                outcome.record,
+                (*outcome.errors, *recovery.errors),
+            )
+        shared = {
+            item.evidence_id: item for spans in retrieved.values() for item in spans
+        }
+        for result in outcome.results:
+            passages = {item.evidence_id: item for item in retrieved[result.request_id]}
+            passages.update({key: shared[key] for key in result.evidence_ids})
+            retrieved[result.request_id] = list(passages.values())
+        self._trace(
+            state,
+            "batch_verification",
+            requests=state["fact_requests"],
+            evidence=retrieved,
+            results=outcome.results,
+            errors=outcome.errors,
+            llm_record=outcome.record,
+        )
+        self._emit(
+            state,
+            "verify_evidence",
+            "claim_verified",
+            "degraded" if outcome.errors else "completed",
+            started,
+            verification_count=len(outcome.results),
+            actionable_count=sum(_is_actionable(item) for item in outcome.results),
+        )
+        return {
+            "verification_results": list(outcome.results),
+            "retrieved_evidence": retrieved,
+            "errors": [*state["errors"], *outcome.errors],
+            "llm_records": [
+                *state["llm_records"],
+                *([initial_record] if initial_record else []),
+                *([recovery_record] if recovery_record else []),
+            ],
+        }
+
     def _propose(self, state: BatchState) -> dict[str, object]:
         """Propose minimal edits for all actionable contradictions."""
         started = time.monotonic()
         requests = {item.request_id: item for item in state["fact_requests"]}
         sentences = _sentence_map(state)
-        proposed = (
-            [
-                item.edit.model_copy(update={"global_start": None, "global_end": None})
-                for item in state["patch_results"]
-                if item.status is PatchStatus.ACCEPTED
-            ]
-            if state["retry_count"]
-            else []
-        )
+        proposed = []
         records = list(state["llm_records"])
         errors = list(state["errors"])
         feedback = (
@@ -401,11 +519,13 @@ class BatchWorkflow:
             or None
         )
         groups: dict[str, list[VerificationResult]] = {}
+        failures: dict[str, str] = {}
         retry_ids = {
             item.edit.request_id
             for item in state["patch_results"]
             if item.status is PatchStatus.RETRYABLE
         }
+        retry_ids.update(state.get("proposal_failures", {}))
         for verification in state["verification_results"]:
             if _is_actionable(verification) and (
                 not state["retry_count"] or verification.request_id in retry_ids
@@ -419,6 +539,38 @@ class BatchWorkflow:
                 for request in group_requests
                 for item in state["retrieved_evidence"].get(request.request_id, [])
             }
+            failed = [
+                item
+                for item in state["patch_results"]
+                if item.status is PatchStatus.RETRYABLE
+                and item.edit.sentence_id == sentence_id
+            ]
+            feedback = (
+                json.dumps(
+                    {
+                        "failed_patches": [
+                            {
+                                "original_text": item.edit.original_text,
+                                "replacement_text": item.edit.replacement_text,
+                                "reason": item.reason,
+                            }
+                            for item in failed
+                        ],
+                        "proposal_failures": {
+                            item.request_id: state.get("proposal_failures", {}).get(
+                                item.request_id
+                            )
+                            for item in verifications
+                        },
+                        "instruction": "Retry ONLY failed patches. Keep accepted "
+                        "patches unchanged. Use independent minimal replacements; "
+                        "retain surrounding prose. If a target is ambiguous, include "
+                        "unchanged surrounding words to identify each occurrence.",
+                    }
+                )
+                if state["retry_count"]
+                else None
+            )
             outcome = self.proposer.propose_group(
                 sentences[sentence_id],
                 group_requests,
@@ -427,7 +579,38 @@ class BatchWorkflow:
                 retry_feedback=feedback,
                 retry_count=state["retry_count"],
             )
-            proposed.extend(outcome.proposal.edits)
+            safe = list(outcome.proposal.edits)
+            if failed:
+                safe = [
+                    edit
+                    for edit in safe
+                    if all(
+                        any(
+                            edit.original_text[start:end] in item.edit.original_text
+                            for item in failed
+                        )
+                        for start, end, _ in changed_fragments(
+                            edit.original_text, edit.replacement_text
+                        )
+                    )
+                ]
+            if not safe or len(safe) != len(outcome.proposal.edits) or outcome.errors:
+                reason = "; ".join(outcome.errors) or "missing_or_out_of_scope_patch"
+                failures.update({item.request_id: reason for item in verifications})
+            proposed.extend(
+                edit.model_copy(
+                    update={
+                        "patch_id": f"{edit.request_id}:"
+                        + (
+                            f"retry{state['retry_count']}:"
+                            if state["retry_count"]
+                            else ""
+                        )
+                        + edit.patch_id
+                    }
+                )
+                for edit in safe
+            )
             self._trace(
                 state,
                 "proposer_output",
@@ -460,7 +643,12 @@ class BatchWorkflow:
             patch_count=len(proposed),
             rejection_codes=";".join(errors[len(state["errors"]) :])[:500],
         )
-        return {"proposed_edits": proposed, "llm_records": records, "errors": errors}
+        return {
+            "proposed_edits": proposed,
+            "proposal_failures": failures,
+            "llm_records": records,
+            "errors": errors,
+        }
 
     def _execute(self, state: BatchState) -> dict[str, object]:
         """Resolve and execute only authorized non-conflicting edits."""
@@ -473,15 +661,20 @@ class BatchWorkflow:
             _all_evidence(state),
             state["source_text"],
         )
-        accepted = sum(
-            item.status is PatchStatus.ACCEPTED for item in execution.results
+        candidate, results = merge_retry_results(
+            state["original_text"],
+            state["patch_results"],
+            list(execution.results),
+            state["retry_count"],
+            self.settings.max_patch_retries,
         )
+        accepted = sum(item.status is PatchStatus.ACCEPTED for item in results)
         self._trace(
             state,
             "executor_output",
             proposed_edits=state["proposed_edits"],
-            patch_results=execution.results,
-            changed=execution.text != state["original_text"],
+            patch_results=results,
+            changed=candidate != state["original_text"],
         )
         event_type = (
             "patch_accepted"
@@ -495,11 +688,11 @@ class BatchWorkflow:
             "completed",
             started,
             accepted_patches=accepted,
-            rejected_patches=len(execution.results) - accepted,
+            rejected_patches=len(results) - accepted,
         )
         return {
-            "patch_results": list(execution.results),
-            "candidate_text": execution.text,
+            "patch_results": results,
+            "candidate_text": candidate,
         }
 
     def _validate(self, state: BatchState) -> dict[str, object]:
@@ -515,6 +708,7 @@ class BatchWorkflow:
             retry_count=state["retry_count"],
             max_patch_retries=self.settings.max_patch_retries,
             soft_patch_character_limit=self.settings.soft_patch_character_limit,
+            semantic_review_enabled=self.settings.enable_validation_llm,
         )
         records = list(state["llm_records"])
         if self.settings.enable_validation_llm:
@@ -523,6 +717,7 @@ class BatchWorkflow:
         status = (
             "retryable"
             if any(item.status is PatchStatus.RETRYABLE for item in validation.results)
+            or state.get("proposal_failures")
             else "completed"
         )
         errors = [*state["errors"], *validation.warnings]
@@ -596,11 +791,15 @@ class BatchWorkflow:
             )
             records.append(response.record)
             review = response.value
-            accepted = bool(
+            edit_ids = {edit.patch_id for edit in edits}
+            valid_review = bool(
                 review
-                and review.verdict is Verdict.SUPPORTED
                 and review.evidence_ids
                 and set(review.evidence_ids) <= set(evidence)
+                and set(review.failed_patch_ids) <= edit_ids
+            )
+            accepted = bool(
+                review and review.verdict is Verdict.SUPPORTED and valid_review
             )
             self._trace(
                 state,
@@ -620,10 +819,11 @@ class BatchWorkflow:
             reason = (
                 review.explanation if review else f"review_llm:{response.record.status}"
             )
+            failed_ids = set(review.failed_patch_ids) if valid_review else edit_ids
             results = [
                 (
                     item.model_copy(update={"status": status, "reason": reason})
-                    if item.edit in edits
+                    if item.edit in edits and item.edit.patch_id in failed_ids
                     else item
                 )
                 for item in results
