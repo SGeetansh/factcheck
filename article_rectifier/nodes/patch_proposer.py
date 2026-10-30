@@ -49,6 +49,8 @@ def _payload(
     request: FactCheckRequest,
     verification: VerificationResult,
     evidence: list[EvidenceSpan],
+    retry_feedback: str | None = None,
+    retry_count: int = 0,
 ) -> dict[str, object]:
     """Serialize only one sentence, verified issue, and cited evidence.
 
@@ -57,6 +59,8 @@ def _payload(
         request: Original factual claim and question.
         verification: Actionable source-grounded contradiction.
         evidence: Exact passages cited by verification.
+        retry_feedback: Targeted prior validation failure, when retrying.
+        retry_count: Number of previous patch proposal attempts.
 
     Returns:
         JSON-compatible minimal patch task.
@@ -66,6 +70,8 @@ def _payload(
         "request": request.model_dump(mode="json"),
         "verification": verification.model_dump(mode="json"),
         "evidence": [item.model_dump(mode="json") for item in evidence],
+        "retry_feedback": retry_feedback,
+        "retry_count": retry_count,
         "constraints": {
             "smallest_exact_change": True,
             "style_changes_forbidden": True,
@@ -174,6 +180,9 @@ class PatchProposer:
         request: FactCheckRequest,
         verification: VerificationResult,
         evidence: list[EvidenceSpan],
+        *,
+        retry_feedback: str | None = None,
+        retry_count: int = 0,
     ) -> PatchProposalOutcome:
         """Request and validate bounded edits for one verified error.
 
@@ -182,6 +191,8 @@ class PatchProposer:
             request: Original fact-check request.
             verification: Source-grounded factual judgment.
             evidence: Exact passages available to the proposer.
+            retry_feedback: Targeted failure reason from the prior validation.
+            retry_count: Number of previous proposal attempts.
 
         Returns:
             Safe patch proposals with provenance and rejection details.
@@ -193,7 +204,14 @@ class PatchProposer:
             {
                 "role": "user",
                 "content": json.dumps(
-                    _payload(sentence, request, verification, evidence),
+                    _payload(
+                        sentence,
+                        request,
+                        verification,
+                        evidence,
+                        retry_feedback,
+                        retry_count,
+                    ),
                     ensure_ascii=False,
                 ),
             },

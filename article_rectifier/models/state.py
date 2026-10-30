@@ -2,11 +2,13 @@
 
 from typing import TypedDict
 
+from article_rectifier.llm.client import LLMCallRecord
 from article_rectifier.models.article import ArticleBatch, SentenceSpan
 from article_rectifier.models.claims import FactCheckRequest
 from article_rectifier.models.edits import SurgicalEdit
 from article_rectifier.models.evidence import EvidenceSpan
 from article_rectifier.models.results import PatchResult, VerificationResult
+from article_rectifier.retrieval.source_index import SourceIndex
 
 
 class BatchState(TypedDict):
@@ -15,12 +17,15 @@ class BatchState(TypedDict):
     article_id: str
     batch: ArticleBatch
     source_text: str
+    source_index: SourceIndex
     original_text: str
     fact_requests: list[FactCheckRequest]
     retrieved_evidence: dict[str, list[EvidenceSpan]]
     verification_results: list[VerificationResult]
     proposed_edits: list[SurgicalEdit]
     patch_results: list[PatchResult]
+    patch_history: list[PatchResult]
+    llm_records: list[LLMCallRecord]
     retry_count: int
     status: str
     errors: list[str]
