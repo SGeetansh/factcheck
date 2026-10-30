@@ -60,6 +60,8 @@ dmypy.json
 
 # Logs
 *.log
+audit_logs/
+.cache/article_rectifier/
 
 # Project specific
 detected_errors/

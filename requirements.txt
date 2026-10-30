@@ -1,3 +1,4 @@
 litellm==1.103.10
 pydantic==2.14.2
+pydantic-settings==2.15.0
 python-dotenv==1.0.0
