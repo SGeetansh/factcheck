@@ -9,6 +9,7 @@ from enum import StrEnum
 
 from article_rectifier.config import Settings
 from article_rectifier.editing.diff_guard import apply_resolved_edits
+from article_rectifier.editing.resolution import unresolved_results
 from article_rectifier.graph import BatchWorkflow
 from article_rectifier.llm.client import LLMCallRecord, LLMClient
 from article_rectifier.models.article import ArticleBatch, ArticleInput
@@ -16,7 +17,6 @@ from article_rectifier.models.edits import SurgicalEdit
 from article_rectifier.models.results import (
     PatchResult,
     PatchStatus,
-    Verdict,
     VerificationResult,
 )
 from article_rectifier.models.state import BatchState
@@ -229,21 +229,7 @@ class ArticleRectificationPipeline:
             item.edit for item in results if item.status is PatchStatus.ACCEPTED
         ]
         rejected = [item for item in results if item.status is not PatchStatus.ACCEPTED]
-        unresolved = [
-            item
-            for state in states
-            for item in state["verification_results"]
-            if item.verdict in {Verdict.UNSUPPORTED, Verdict.UNCERTAIN}
-            or (
-                item.verdict is Verdict.CONTRADICTED
-                and item.request_id
-                not in {
-                    patch.edit.request_id
-                    for patch in state["patch_results"]
-                    if patch.status is PatchStatus.ACCEPTED
-                }
-            )
-        ]
+        unresolved = [item for state in states for item in unresolved_results(state)]
         records = [item for state in states for item in state["llm_records"]]
         errors = [error for state in states for error in state["errors"]]
         output = apply_resolved_edits(original, accepted)

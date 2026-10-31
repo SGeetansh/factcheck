@@ -568,3 +568,17 @@ output: all summary and schedule dates and venues are corrected. Preservation
 is 95.23%; article_052 preservation is 97.26%. These measurements describe text
 retention, not factual accuracy. The final verified provider balance was about
 $1.727. The full dataset was not executed.
+
+## Final correction accounting
+
+A request ID does not prove that a factual issue was resolved. Different requests
+can describe the same wrong value. One request can also contain several wrong
+values. The final merge checks each structured correction at its unique original
+sentence span. It applies only accepted edits within that span and compares the
+result with the verified value. All values must match before the request counts
+as resolved. A patch from another request can satisfy this check.
+
+Ambiguous spans and edits that cross a fact boundary remain unresolved in this
+accounting. Unsupported and uncertain judgments also remain unresolved. This
+check measures whether accepted patches implement verified corrections. It does
+not independently establish factual accuracy.
