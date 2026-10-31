@@ -216,6 +216,35 @@ start offset. Earlier changes cannot shift later original offsets.
 
 ## 13. Validation rules
 
+The current default verifies a three-sentence batch in one structured request.
+Duplicate claim questions are merged before verification. The verifier receives
+complete article sentences so that a wrong entity can be aligned with the same
+event in the source. It returns exact original and corrected value pairs with
+evidence IDs. Python constructs simple replacements and reduces contextual
+proposals to independent token changes. Complex clauses still use the proposer.
+
+One bounded recovery request can examine unresolved claims with broader source
+context (at most 16,000 characters, in addition to retrieved passages). Recovery
+must establish the correct event or relationship; absence alone is not proof.
+
+With semantic review enabled, deterministic validation checks exact evidence,
+offsets, reconstruction and introduced numeric values, including scaled amounts
+and number words. It does not require replacement prose to occur verbatim in the
+source. The sentence reviewer checks meaning, qualifiers and edited lists. This
+model review is an operational safety gate, not an independent accuracy score.
+The lexical-only fallback below applies when semantic review is disabled.
+
+Retries retain accepted edits at their trusted offsets. Only failed patches are
+proposed again. A reviewer can identify a larger exact original span when the
+same failed relationship includes an adjacent qualifier. The editor still rejects
+overlap with retained accepted edits. Rejected proposals and ambiguous targets
+receive at most one repair attempt.
+
+The normal CLI saves article-only text to `rectified_articles/article_NNN.txt`.
+Diagnostic commands can use separate output directories. Copy reviewed final
+diagnostic outputs for new IDs to the required directory without adding reports,
+JSON, traces or code fences. Never overwrite the 10 protected human references.
+
 Structural validation reconstructs the expected article from the immutable
 original and accepted patches. The candidate must equal this reconstruction. It
 must not contain error annotations, JSON artifacts, or code fences.

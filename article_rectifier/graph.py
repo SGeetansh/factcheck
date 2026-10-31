@@ -820,10 +820,26 @@ class BatchWorkflow:
                 review.explanation if review else f"review_llm:{response.record.status}"
             )
             failed_ids = set(review.failed_patch_ids) if valid_review else edit_ids
+            if valid_review:
+                for index, item in enumerate(results):
+                    span = review.retry_original_spans.get(item.edit.patch_id)
+                    if (
+                        item.edit.patch_id in failed_ids
+                        and span
+                        and span in sentence.text
+                        and item.edit.original_text in span
+                    ):
+                        results[index] = item.model_copy(
+                            update={
+                                "edit": item.edit.model_copy(
+                                    update={"original_text": span}
+                                )
+                            }
+                        )
             results = [
                 (
                     item.model_copy(update={"status": status, "reason": reason})
-                    if item.edit in edits and item.edit.patch_id in failed_ids
+                    if item.edit.patch_id in failed_ids
                     else item
                 )
                 for item in results

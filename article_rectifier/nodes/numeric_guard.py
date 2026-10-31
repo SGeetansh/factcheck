@@ -28,10 +28,31 @@ def numeric_values(text: str) -> set[Decimal]:
     Returns:
         Normalized numeric values. Semantic roles are checked by the reviewer.
     """
-    return {
+    values = {
         Decimal(match[1].replace(",", "")) * SCALE.get((match[2] or "").lower(), 1)
         for match in NUMBER.finditer(text)
     }
+    words = {
+        "zero": 0,
+        "one": 1,
+        "two": 2,
+        "three": 3,
+        "four": 4,
+        "five": 5,
+        "six": 6,
+        "seven": 7,
+        "eight": 8,
+        "nine": 9,
+        "ten": 10,
+        "eleven": 11,
+        "twelve": 12,
+    }
+    values.update(
+        Decimal(words[word])
+        for word in re.findall(r"\b\w+\b", text.lower())
+        if word in words
+    )
+    return values
 
 
 def numeric_error(edit: SurgicalEdit, evidence: list[EvidenceSpan]) -> str | None:

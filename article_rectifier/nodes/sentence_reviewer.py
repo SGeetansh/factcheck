@@ -23,6 +23,7 @@ class SentenceReview(BaseModel):
     evidence_ids: tuple[str, ...]
     explanation: str = Field(min_length=1, max_length=1200)
     failed_patch_ids: tuple[str, ...] = ()
+    retry_original_spans: dict[str, str] = {}
 
     @model_validator(mode="after")
     def check_failed_ids(self) -> "SentenceReview":
@@ -83,7 +84,12 @@ def review_sentence(
         "contradiction. Cite supplied evidence IDs. Identify only the failed patch IDs "
         "in failed_patch_ids; use [] for supported. Check every patch independently "
         "within the complete sentence; do not reject a correct patch because another "
-        "patch is wrong. Return JSON matching the schema."
+        "patch is wrong. Check retained qualifiers attached to changed entities "
+        "(including their city), and ALL members of an edited date or number list. "
+        "Flag partial corrections that leave these relationships wrong. For a failed "
+        "patch needing adjacent context repaired, put its exact ORIGINAL sentence "
+        "substring in retry_original_spans keyed by patch ID. Identify all linked "
+        "patches involved in that failing relationship. Return JSON matching the schema."
     )
     return client.complete_structured(
         [
@@ -91,5 +97,5 @@ def review_sentence(
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ],
         SentenceReview,
-        prompt_version="sentence-review-v2",
+        prompt_version="sentence-review-v3",
     )

@@ -384,6 +384,14 @@ def _fact_pair_proposal(
     targets: dict[str, str] = {}
     for verification in verifications:
         for fact in verification.corrections:
+            if fact.original_value.endswith(
+                (",", ";", ":")
+            ) and not fact.correct_value.endswith(fact.original_value[-1]):
+                fact = fact.model_copy(
+                    update={
+                        "correct_value": fact.correct_value + fact.original_value[-1]
+                    }
+                )
             if bool(re.search(r"\d", fact.original_value)) != bool(
                 re.search(r"\d", fact.correct_value)
             ):
