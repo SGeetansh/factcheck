@@ -139,3 +139,20 @@ def test_headings_paragraphs_and_spacing_reconstruct_exactly() -> None:
     spans = split_sentences(text)
     assert reconstruct_from_spans(text, spans) == text
     assert spans[0].paragraph_id != spans[1].paragraph_id
+
+
+def test_adjacent_headings_are_separate_factual_spans() -> None:
+    """A wrong headline must not be hidden inside a supported body sentence."""
+    from article_rectifier.preprocessing.sentence_splitter import (
+        reconstruct_from_spans,
+        split_sentences,
+    )
+
+    text = "## Actor has sued rival\n### Synopsis\nThe actor sent a legal notice."
+    spans = split_sentences(text)
+    assert [span.text for span in spans] == [
+        "## Actor has sued rival",
+        "### Synopsis",
+        "The actor sent a legal notice.",
+    ]
+    assert reconstruct_from_spans(text, spans) == text

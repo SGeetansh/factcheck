@@ -118,6 +118,17 @@ def verify_batch(
             "Do not confuse different events, and do not infer a contradiction from "
             "mere absence. Leave genuinely uncovered or ambiguous facts unresolved."
         )
+    instruction += (
+        " Check EVERY proposition in claim_text, including headlines and qualifiers. "
+        "For quotations, match the quoted content to the source FIRST, then verify "
+        "the speaker and exact claim type. A matching quote attributed to another "
+        "person is a correctable attribution contradiction, not an unsupported claim. "
+        "Correct linked speaker pronouns too. Verify that the person said it; do not "
+        "demand independent proof that their quoted allegation is objectively true. "
+        "Distinguish a legal notice from a filed lawsuit. For an unsupported specific "
+        "occupation/platform label, use the source's explicit broader role when one "
+        "is available, changing only that label. Never invent a replacement role."
+    )
     response = client.complete_structured(
         [
             {"role": "system", "content": instruction},
@@ -125,7 +136,7 @@ def verify_batch(
         ],
         VerificationBatch,
         prompt_version=(
-            "batch-verifier-recovery-v4" if recovery else "batch-verifier-v4"
+            "batch-verifier-recovery-v5" if recovery else "batch-verifier-v5"
         ),
     )
     return _validate_batch(requests, evidence, response.value, response.record)

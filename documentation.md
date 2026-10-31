@@ -597,3 +597,16 @@ Cache-only replay can take a different recovery path after a prior API failure.
 A failed response is not a successful cached response. Do not use a partial
 cache-only replay as a substitute for the original paid result in quality reports.
 Use the saved paid-run trace to recompute deterministic operational metrics.
+
+## Headlines and attributed statements
+
+Headings are separate editable spans even when no blank line follows them.
+This prevents a supported body sentence from hiding a wrong headline. Preserve
+all original whitespace and heading markers when reconstructing the article.
+
+For quotations, verification first matches the quoted content to the source,
+then checks the speaker and the statement type. A different source speaker is
+a correctable attribution mismatch. A quoted allegation does not need to be
+proved independently true. Check linked pronouns and distinguish a legal notice
+from a lawsuit. A source-supported broader role can replace an unsupported
+platform-specific role; the model must not invent a more specific occupation.

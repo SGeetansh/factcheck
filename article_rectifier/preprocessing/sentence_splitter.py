@@ -119,11 +119,19 @@ def _split_paragraph(text: str, start: int, end: int) -> list[tuple[int, int]]:
         Ordered sentence ranges with surrounding whitespace excluded.
     """
     paragraph = text[start:end]
-    if paragraph.lstrip().startswith("#") and "\n" not in paragraph:
-        return [(start, end)]
     ranges: list[tuple[int, int]] = []
+    # Headlines are independent factual claims, even without terminal punctuation.
     local_start = 0
-    for index, character in enumerate(paragraph):
+    while local_start < len(paragraph) and paragraph[local_start:].startswith("#"):
+        newline = paragraph.find("\n", local_start)
+        heading_end = len(paragraph) if newline < 0 else newline
+        ranges.append((start + local_start, start + heading_end))
+        local_start = heading_end
+        while local_start < len(paragraph) and paragraph[local_start].isspace():
+            local_start += 1
+    body_start = local_start
+    for index in range(body_start, len(paragraph)):
+        character = paragraph[index]
         if character not in TERMINATORS:
             continue
         local_end = _boundary_end(paragraph, index)
