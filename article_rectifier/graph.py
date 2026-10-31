@@ -428,7 +428,11 @@ class BatchWorkflow:
             state["fact_requests"],
             retrieved,
             state["source_text"],
-            article_context=context,
+            article_context=(
+                state["original_text"]
+                if len(state["original_text"]) <= 12000
+                else context
+            ),
         )
         initial_record = outcome.record
         unknown = {
@@ -461,7 +465,11 @@ class BatchWorkflow:
                 {key: retrieved[key] for key in sorted(unknown)},
                 source,
                 recovery=True,
-                article_context=context,
+                article_context=(
+                    state["original_text"]
+                    if len(state["original_text"]) <= 12000
+                    else context
+                ),
             )
             recovery_record = recovery.record
             replacements = {item.request_id: item for item in recovery.results}
@@ -800,7 +808,11 @@ class BatchWorkflow:
                 for item in state["retrieved_evidence"].get(request.request_id, [])
             }
             response = review_sentence(
-                self.llm_client, sentence, edits, list(evidence.values())
+                self.llm_client,
+                sentence,
+                edits,
+                list(evidence.values()),
+                article_context=state["original_text"][:12000],
             )
             records.append(response.record)
             review = response.value

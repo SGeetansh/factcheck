@@ -40,6 +40,8 @@ def review_sentence(
     sentence: SentenceSpan,
     edits: list[SurgicalEdit],
     evidence: list[EvidenceSpan],
+    *,
+    article_context: str = "",
 ) -> StructuredLLMResult[SentenceReview]:
     """Check edited factual relationships and grammatical patch boundaries.
 
@@ -48,6 +50,7 @@ def review_sentence(
         sentence: Immutable sentence before edits.
         edits: Deterministically validated edits with original global offsets.
         evidence: Exact relevant passages, including counter-evidence.
+        article_context: Read-only article context for resolving speakers.
 
     Returns:
         Structured operational judgment with per-call provenance.
@@ -62,6 +65,7 @@ def review_sentence(
         for edit in edits
     ]
     payload = {
+        "article_context": article_context,
         "original": sentence.text,
         "candidate": apply_resolved_edits(sentence.text, local),
         "patches": [edit.model_dump(mode="json") for edit in edits],
@@ -90,7 +94,11 @@ def review_sentence(
         "patch needing adjacent context repaired, put its exact ORIGINAL sentence "
         "substring in retry_original_spans keyed by patch ID. Identify all linked "
         "patches involved in that failing relationship. Return JSON matching "
-        "the schema."
+        "the schema. Resolve pronouns using article_context. A fact said by a "
+        "different speaker does NOT justify attributing it to this speaker. Reject "
+        "such attribution transfers. Check required prepositions after changed verbs "
+        "(for example, replacing a transitive verb with a notice-sending phrase "
+        "requires a recipient preposition). Preserve grammatical completeness."
     )
     return client.complete_structured(
         [
@@ -98,5 +106,5 @@ def review_sentence(
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ],
         SentenceReview,
-        prompt_version="sentence-review-v3",
+        prompt_version="sentence-review-v4",
     )

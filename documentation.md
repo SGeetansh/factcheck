@@ -610,3 +610,10 @@ a correctable attribution mismatch. A quoted allegation does not need to be
 proved independently true. Check linked pronouns and distinguish a legal notice
 from a lawsuit. A source-supported broader role can replace an unsupported
 platform-specific role; the model must not invent a more specific occupation.
+
+Use the full sanitized article as read-only verification context when it fits in
+12,000 characters. Sentence review also receives article context to resolve
+pronouns and speakers. An allegation from one person cannot justify attributing
+it to another. Review the grammatical boundaries of replacements, including
+prepositions required by a changed verb. These are operational model checks;
+the saved output still requires independent evaluation.

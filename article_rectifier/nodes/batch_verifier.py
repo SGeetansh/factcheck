@@ -127,7 +127,13 @@ def verify_batch(
         "demand independent proof that their quoted allegation is objectively true. "
         "Distinguish a legal notice from a filed lawsuit. For an unsupported specific "
         "occupation/platform label, use the source's explicit broader role when one "
-        "is available, changing only that label. Never invent a replacement role."
+        "is available, changing only that label. Never invent a replacement role. "
+        "Return that supported generalization as correction_available, not merely "
+        "unsupported. Check pronouns in each editable quote introduction against the "
+        "source speaker, even if a wrong name occurs in read-only context. Only "
+        "original_value spans inside the requested editable sentence may be changed. "
+        "Do not transfer one speaker's allegations to another speaker. Nonfactual "
+        "section labels need no change; do not demand they appear in the source."
     )
     response = client.complete_structured(
         [
@@ -136,7 +142,7 @@ def verify_batch(
         ],
         VerificationBatch,
         prompt_version=(
-            "batch-verifier-recovery-v5" if recovery else "batch-verifier-v5"
+            "batch-verifier-recovery-v6" if recovery else "batch-verifier-v6"
         ),
     )
     return _validate_batch(requests, evidence, response.value, response.record)
