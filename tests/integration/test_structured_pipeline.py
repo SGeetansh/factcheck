@@ -38,6 +38,7 @@ def test_batch_verification_builds_small_patches_without_proposer_calls(
                     "correct_value": new,
                     "evidence_ids": [evidence_id],
                     "error_type": "numerical",
+                    "support_quote": source,
                 }
             ],
         }

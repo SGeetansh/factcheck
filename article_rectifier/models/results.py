@@ -33,6 +33,7 @@ class FactCorrection(BaseModel):
     correct_value: str
     evidence_ids: tuple[str, ...] = Field(min_length=1)
     error_type: ErrorType
+    support_quote: str = ""
 
 
 class VerificationResult(BaseModel):

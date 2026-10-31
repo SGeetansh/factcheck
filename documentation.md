@@ -227,6 +227,14 @@ event in the source. It returns exact original and corrected value pairs with
 evidence IDs. Python constructs simple replacements and reduces contextual
 proposals to independent token changes. Complex clauses still use the proposer.
 
+Each structured correction also includes an exact `support_quote`. Python checks
+that the quote occurs in a cited source passage. For a claim with an explicit
+year that the correction does not change, the quote must establish that same
+year. Evidence about another tournament edition or visit cannot authorize a
+venue substitution. A failed witness check becomes an unresolved judgment and
+can use the bounded recovery pass. Passing this check is not proof of entailment;
+sentence review and independent output evaluation remain necessary.
+
 One bounded recovery request can examine unresolved claims with broader source
 context (at most 16,000 characters, in addition to retrieved passages). Recovery
 must establish the correct event or relationship; absence alone is not proof.

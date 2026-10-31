@@ -10,6 +10,7 @@ from article_rectifier.llm.prompts import VERIFIER_SYSTEM_PROMPT
 from article_rectifier.models.claims import FactCheckRequest
 from article_rectifier.models.evidence import EvidenceSpan
 from article_rectifier.models.results import Verdict, VerificationResult
+from article_rectifier.nodes.event_grounding import event_grounding_error
 from article_rectifier.nodes.evidence_verifier import (
     _semantic_error,
     _unresolved_result,
@@ -85,7 +86,13 @@ def verify_batch(
         "null "
         "when corrections are present. If several requests identify the same error, "
         "return the same minimal value pair; Python will deduplicate it. "
-        "Cite any evidence ID in the shared evidence list; never invent an ID."
+        "Cite any evidence ID in the shared evidence list; never invent an ID. "
+        "Every correction MUST include support_quote: an exact contiguous source "
+        "quotation establishing the corrected fact for the SAME event. If the claim "
+        "names a year that is not being corrected, the quote must establish that year. "
+        "Do not transfer a venue, participant, or result between different editions "
+        "of a tournament or different visits. Return uncertain when event identity "
+        "cannot be established."
     )
     if recovery:
         instruction += (
@@ -104,7 +111,7 @@ def verify_batch(
         ],
         VerificationBatch,
         prompt_version=(
-            "batch-verifier-recovery-v2" if recovery else "batch-verifier-v3"
+            "batch-verifier-recovery-v3" if recovery else "batch-verifier-v4"
         ),
     )
     return _validate_batch(requests, evidence, response.value, response.record)
@@ -138,6 +145,8 @@ def _validate_batch(
             if len(matches) == 1
             else "missing_or_duplicate_verification"
         )
+        if error is None:
+            error = event_grounding_error(matches[0], request, shared)
         if error:
             errors.append(f"{error}:{request.request_id}")
             results.append(_unresolved_result(request, Verdict.UNCERTAIN, error))
