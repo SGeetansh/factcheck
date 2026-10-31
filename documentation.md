@@ -562,3 +562,9 @@ unresolved. This request count is not a count of remaining factual errors.
 The diagnostic outputs and full stage traces are saved under evaluate/reports/
 and audit_logs/debug/. These cases informed development and are not an independent
 human-parity benchmark. Keep the human references unchanged.
+
+The final article_022 replay is byte-identical to the earlier event-grounded
+output: all summary and schedule dates and venues are corrected. Preservation
+is 95.23%; article_052 preservation is 97.26%. These measurements describe text
+retention, not factual accuracy. The final verified provider balance was about
+$1.727. The full dataset was not executed.
