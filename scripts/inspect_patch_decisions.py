@@ -72,7 +72,9 @@ def show_proposals(location: str, details: dict[str, Any]) -> None:
         accepted = (edit.get("patch_id"), edit.get("sentence_id")) in allowed
         reasons = [code for code in codes if edit.get("patch_id", "") in code]
         show_patch(
-            location, "PROPOSER", edit,
+            location,
+            "PROPOSER",
+            edit,
             "passed" if accepted else "rejected",
             "; ".join(reasons) if reasons else None,
         )
@@ -80,9 +82,7 @@ def show_proposals(location: str, details: dict[str, Any]) -> None:
         print(f"[{location}] proposer error codes: {codes}")
 
 
-def show_results(
-    location: str, stage: str, results: list[dict[str, Any]]
-) -> None:
+def show_results(location: str, stage: str, results: list[dict[str, Any]]) -> None:
     """Print executor, validator, or final results for each patch.
 
     Args:
@@ -95,8 +95,11 @@ def show_results(
     """
     for item in results:
         show_patch(
-            location, stage, item["edit"],
-            item["status"], item.get("reason"),
+            location,
+            stage,
+            item["edit"],
+            item["status"],
+            item.get("reason"),
         )
 
 
@@ -156,7 +159,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trace", type=Path, help="Path to a debug JSONL trace")
     parser.add_argument(
-        "--include-verifier", action="store_true",
+        "--include-verifier",
+        action="store_true",
         help="Also show actionable factual verification results",
     )
     args = parser.parse_args()

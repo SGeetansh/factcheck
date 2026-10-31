@@ -582,3 +582,18 @@ Ambiguous spans and edits that cross a fact boundary remain unresolved in this
 accounting. Unsupported and uncertain judgments also remain unresolved. This
 check measures whether accepted patches implement verified corrections. It does
 not independently establish factual accuracy.
+
+## Seeded random development check
+
+A three-article sample used seed 20261031 over IDs 11–104, excluding recent cases
+22, 50, and 52. The selected IDs were 53, 42, and 62. The paid runs corrected all
+six source-corroborated annotated error groups in articles 42 and 62 with nine
+small substitutions. Preservation was 97.57% and 99.54%. Article 53 was unchanged;
+its supplied sources contain demand-versus-demand-growth ambiguity, so it is not
+a certified error-free negative. These are development observations, not proof
+of human-level accuracy. See evaluate/reports/random-20261031/review.md.
+
+Cache-only replay can take a different recovery path after a prior API failure.
+A failed response is not a successful cached response. Do not use a partial
+cache-only replay as a substitute for the original paid result in quality reports.
+Use the saved paid-run trace to recompute deterministic operational metrics.

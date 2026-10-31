@@ -1,0 +1,107 @@
+{
+  "selection": {
+    "seed": 20261031,
+    "population": "11..104 excluding 22,50,52",
+    "order": [
+      53,
+      42,
+      62
+    ]
+  },
+  "reviewer": "Assistant comparison against supplied source; not independent human adjudication",
+  "scope": "Six known annotated error groups, corroborated against source. This is not exhaustive factuality or human parity.",
+  "cases": {
+    "article_042": {
+      "source_sha256": "058e7e6884311558dd46d8c39f630394a21b31d1c1e48c34e5a4b51bbc35c6c4",
+      "original_sha256": "5c6ae3dab438f5636d3267dbe4288525a4dd564a84c0915e28c20713d8b61159",
+      "output_sha256": "53dd9bc90a8c05b1af65b991201292c5e14337a15e85b51c633a6b1283cdeb1e",
+      "groups": [
+        {
+          "id": "investor_and_merger",
+          "error": [
+            "investment from BMW",
+            "merger with Ferrari"
+          ],
+          "correct": [
+            "investment from Porsche",
+            "merger with Bugatti"
+          ],
+          "source": "In 2021, following an investment by Porsche and a merger with Bugatti, Rimac became a more significant supplier and development partner for OEMs seeking high-performance electric powertrains.",
+          "resolved": true
+        },
+        {
+          "id": "battery_partners",
+          "error": [
+            "Solid Power cells",
+            "Toray materials"
+          ],
+          "correct": [
+            "ProLogium cells",
+            "Mitsubishi Chemical Group materials"
+          ],
+          "source": "integrates ProLogium cells and Mitsubishi Chemical Group materials",
+          "resolved": true
+        },
+        {
+          "id": "rotor_speed",
+          "error": [
+            "50,000 rpm"
+          ],
+          "correct": [
+            "25,000 rpm"
+          ],
+          "source": "rotor speeds up to 25,000 rpm",
+          "resolved": true
+        },
+        {
+          "id": "power_range",
+          "error": [
+            "1,500–3,600 kW"
+          ],
+          "correct": [
+            "150–360 kW"
+          ],
+          "source": "Output envelopes from 150–360 kW",
+          "resolved": true
+        }
+      ]
+    },
+    "article_062": {
+      "source_sha256": "cafc3e1198d84d25f214dc187b23ee074e7b03ffd3d976940896792d817936d6",
+      "original_sha256": "09811729d2f385cee430ddb4b0df9abe6da8f6975bd58e6da1750a1785d2e6c2",
+      "output_sha256": "55c4d3558e95211a8d3e1865880bfb4c65c5e7b7c19edb933ef99aca97eb3f78",
+      "groups": [
+        {
+          "id": "free_storage",
+          "error": [
+            "free tier of Signal's backup plan offers 100GB"
+          ],
+          "correct": [
+            "free tier of Signal's backup plan offers 100MB"
+          ],
+          "source": "Signal’s free tier gives users 100MB of storage for text messages and the last 45 days’ worth of media.",
+          "note": "Another supplied article says 100MiB. MB is explicitly source-supported and permitted by the development annotation; do not claim exact byte equivalence.",
+          "resolved": true
+        },
+        {
+          "id": "beta_platform",
+          "error": [
+            "beta version of Signal's iOS app"
+          ],
+          "correct": [
+            "beta version of Signal's Android app"
+          ],
+          "source": "At launch, Signal is offering this feature only on the beta version of its Android app",
+          "resolved": true
+        }
+      ]
+    },
+    "article_053": {
+      "source_sha256": "1ea6c771156f291151eae4c30a121275fe318b02330e7f9c99610432b11d88d7",
+      "original_sha256": "b8a63bc90ed5ee71cf269ca7f45e84b975e70316ee04e3a7590aa64b5bf71643",
+      "output_sha256": "c40cadab7ff92c1e0dd1f03e157efb1ee44cfe6d599787b7aedf800ec15a247b",
+      "groups": [],
+      "review_note": "No annotated errors; unchanged. Main source discusses demand growth, while a summary and quoted speaker use demand. Scope ambiguity remains; unchanged output is not a certified clean negative."
+    }
+  }
+}
