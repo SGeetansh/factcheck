@@ -534,3 +534,31 @@ Do not use cache-only runs for factual-quality evaluation.
 RECTIFIER_DEBUG=1 RECTIFIER_CACHE_ONLY=1 uv run python rectifier.py test \
   --count 1 --output-dir evaluate/reports/cache-debug
 ```
+
+## Recovery of incorrect event names
+
+Recovery first matches the source event by its subject, purpose, time, and nearby
+sentences. It then compares the event attributes. It can correct a wrong venue
+or event name even when the wrong name does not occur in the source. Recovery
+uses a separate source-first instruction and runs once for unresolved requests.
+It keeps corrections that passed the first verification step.
+
+Each correction requires structured values and an exact, contiguous source
+quote. A stitched or paraphrased quote fails this check. The quote must also
+establish an explicit event year that the correction leaves unchanged. These
+checks prevent known mistakes. They do not prove that the source entails the
+whole corrected sentence. The sentence reviewer checks that relationship.
+
+A new negative claim also requires negative wording in the source quote. A
+positive donation fact cannot establish that a person did not attend an event.
+This conservative check sends the claim to recovery. It can reject a valid
+negative expressed in different words; such a claim remains unresolved until
+there is enough evidence. It is not a general negation or entailment model.
+
+The October 31 development replay corrected the four inspected error groups in
+article_052: venue, event name, anniversary, and age. The output also removes the
+incorrect London qualifier from the venue. One duplicate timing request remains
+unresolved. This request count is not a count of remaining factual errors.
+The diagnostic outputs and full stage traces are saved under evaluate/reports/
+and audit_logs/debug/. These cases informed development and are not an independent
+human-parity benchmark. Keep the human references unchanged.

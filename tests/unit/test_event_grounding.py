@@ -96,3 +96,54 @@ def test_invented_quote_is_rejected() -> None:
         event_grounding_error(result, request, [])
         == "correction_missing_exact_support_quote"
     )
+
+
+def test_absence_does_not_establish_nonattendance() -> None:
+    """A positive donation fact cannot authorize a negative attendance claim."""
+    request = FactCheckRequest(
+        request_id="r",
+        sentence_id="s",
+        claim_text="attendance at Event A",
+        verification_question="Which event?",
+        search_query="event",
+        sentence_start=0,
+        sentence_end=21,
+    )
+    source = "He donated to Event A."
+    evidence = EvidenceSpan(
+        evidence_id="e",
+        source_article_id="a",
+        text=source,
+        start=0,
+        end=len(source),
+        retrieval_score=1,
+        retrieval_strategy="bm25",
+    )
+    result = VerificationResult.model_validate(
+        {
+            "request_id": "r",
+            "verdict": "contradicted",
+            "evidence_ids": ["e"],
+            "explanation": "Attendance",
+            "error_types": ["other"],
+            "status": "correction_available",
+            "corrections": [
+                {
+                    "original_value": "attendance at",
+                    "correct_value": "not attending",
+                    "evidence_ids": ["e"],
+                    "error_type": "other",
+                    "support_quote": source,
+                }
+            ],
+        }
+    )
+    assert (
+        event_grounding_error(result, request, [evidence])
+        == "correction_negative_not_established"
+    )
+    empty = result.model_copy(update={"corrections": ()})
+    assert (
+        event_grounding_error(empty, request, [evidence])
+        == "correction_missing_structured_witness"
+    )

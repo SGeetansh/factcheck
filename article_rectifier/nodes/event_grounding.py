@@ -21,6 +21,8 @@ def event_grounding_error(
         A rejection code or None. Passing is not an entailment proof.
     """
     passages = {item.evidence_id: item.text for item in evidence}
+    if result.status.value == "correction_available" and not result.corrections:
+        return "correction_missing_structured_witness"
     years = set(re.findall(r"\b(?:19|20)\d{2}\b", request.claim_text))
     corrected_years = {
         year
@@ -29,6 +31,13 @@ def event_grounding_error(
     }
     retained_years = years - corrected_years
     for fact in result.corrections:
+        negative = r"\b(?:not|never|no)\b|n't\b"
+        if (
+            re.search(negative, fact.correct_value, re.I)
+            and not re.search(negative, fact.original_value, re.I)
+            and not re.search(negative, fact.support_quote, re.I)
+        ):
+            return "correction_negative_not_established"
         if not fact.support_quote.strip() or not any(
             fact.support_quote in passages.get(identifier, "")
             for identifier in fact.evidence_ids

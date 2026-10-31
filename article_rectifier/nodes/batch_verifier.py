@@ -95,7 +95,21 @@ def verify_batch(
         "cannot be established."
     )
     if recovery:
-        instruction += (
+        instruction = (
+            "You are a source-grounded factual editor resolving a failed fact check. "
+            "First identify the source event matching the article's subject, purpose, "
+            "time and surrounding sentences. Then compare its actual attributes with "
+            "the article. An incorrect venue or event name is normally a substitution: "
+            "replace it with the source's value for the matching event. Do not convert "
+            "an incorrect event label into a claim that the person did not attend. "
+            "Do not confuse separate events or editions. Never infer a negative from "
+            "absence. Preserve unrelated text. Return one result per request_id using "
+            "the supplied schema, exact original_value substrings, corrected values, "
+            "and exact contiguous support_quote copied from cited source text. "
+            "Use contradicted/correction_available for established substitutions; "
+            "unsupported or uncertain/unresolved with no correction when no matching "
+            "source fact exists. Corrections must use cited IDs and error_types. "
+        ) + (
             " This is a bounded recovery pass with broader source context. Answer "
             "what the source DOES establish for the specific event or relationship. "
             "An incorrect entity may be absent because a DIFFERENT venue, event, "
@@ -111,7 +125,7 @@ def verify_batch(
         ],
         VerificationBatch,
         prompt_version=(
-            "batch-verifier-recovery-v3" if recovery else "batch-verifier-v4"
+            "batch-verifier-recovery-v4" if recovery else "batch-verifier-v4"
         ),
     )
     return _validate_batch(requests, evidence, response.value, response.record)
