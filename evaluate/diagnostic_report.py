@@ -44,11 +44,17 @@ def trace_metrics(path: Path) -> tuple[str, dict[str, object], UsageObservation]
         "accepted_patches": [
             patch["edit"] for patch in patches if patch["status"] == "accepted"
         ],
-        "final_patch_observations": [PatchObservation(
-            patch_id=patch["edit"]["patch_id"], original_text=patch["edit"]["original_text"],
-            replacement_text=patch["edit"]["replacement_text"], applied=patch["status"] == "accepted",
-            evidence_ids=tuple(patch["edit"]["evidence_ids"]), justified=None,
-        ).model_dump(mode="json") for patch in patches],
+        "final_patch_observations": [
+            PatchObservation(
+                patch_id=patch["edit"]["patch_id"],
+                original_text=patch["edit"]["original_text"],
+                replacement_text=patch["edit"]["replacement_text"],
+                applied=patch["status"] == "accepted",
+                evidence_ids=tuple(patch["edit"]["evidence_ids"]),
+                justified=None,
+            ).model_dump(mode="json")
+            for patch in patches
+        ],
     }
     usage = UsageObservation(
         llm_calls=sum(record.get("transport_calls") or 0 for record in records),
@@ -82,10 +88,13 @@ def build_report(project: Path, outputs: Path, traces: list[Path]) -> dict[str, 
         reference_path = project / "evaluate/fixtures/human_references" / filename
         reference = reference_path.read_text() if reference_path.is_file() else None
         output = (outputs / filename).read_text()
-        patches = [PatchObservation.model_validate(item)
-                   for item in operations["final_patch_observations"]]
-        metrics = evaluate_article(source, original, output, reference, usage=usage,
-                                   patches=patches)
+        patches = [
+            PatchObservation.model_validate(item)
+            for item in operations["final_patch_observations"]
+        ]
+        metrics = evaluate_article(
+            source, original, output, reference, usage=usage, patches=patches
+        )
         baseline = evaluate_article(source, original, original, reference)
         articles[article_id] = {
             "metrics": metrics.model_dump(mode="json"),
@@ -94,7 +103,8 @@ def build_report(project: Path, outputs: Path, traces: list[Path]) -> dict[str, 
             "output": str((outputs / filename).resolve()),
         }
     return {
-        "scope": "Saved diagnostic articles; development results are not holdout estimates.",
+        "scope": "Saved diagnostic articles; development results are not holdout "
+        "estimates.",
         "limitations": "Reference similarity is not accuracy. Attribution, precision, "
         "new-error count and global recall require independent validated judgments. "
         "Operational sentence reviews do not supply those judgments.",

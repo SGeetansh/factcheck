@@ -1,5 +1,7 @@
 """Resolve model-proposed exact text to immutable article offsets."""
 
+import re
+
 from article_rectifier.models.article import SentenceSpan
 from article_rectifier.models.edits import EditOperation, SurgicalEdit
 
@@ -65,4 +67,8 @@ def resolve_edit(
     start, end = find_unique_span(
         article_text, edit.original_text, sentence.start, sentence.end
     )
+    if re.fullmatch(r"\d+,", edit.original_text) and re.fullmatch(
+        r"\d+", edit.replacement_text
+    ):
+        edit = edit.model_copy(update={"replacement_text": edit.replacement_text + ","})
     return edit.model_copy(update={"global_start": start, "global_end": end})

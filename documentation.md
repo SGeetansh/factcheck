@@ -218,6 +218,10 @@ start offset. Earlier changes cannot shift later original offsets.
 
 The current default verifies a three-sentence batch in one structured request.
 Duplicate claim questions are merged before verification. The verifier receives
+the full source when it is at most 12,000 characters. This avoids dropping a
+schedule or a relevant source paragraph during lexical retrieval. For longer
+sources, it uses retrieved passages and bounded recovery.
+The verifier also receives
 complete article sentences so that a wrong entity can be aligned with the same
 event in the source. It returns exact original and corrected value pairs with
 evidence IDs. Python constructs simple replacements and reduces contextual

@@ -405,6 +405,19 @@ class BatchWorkflow:
             passages.update({item.evidence_id: item for item in expanded})
             retrieved[request.request_id] = list(passages.values())
         batch = state["batch"]
+        if len(state["source_text"]) <= 12000:
+            source = state["source_text"]
+            full = EvidenceSpan(
+                evidence_id=f"src-{state['article_id']}-complete",
+                source_article_id=state["article_id"],
+                text=source,
+                start=0,
+                end=len(source),
+                retrieval_score=0,
+                retrieval_strategy=RetrievalStrategy.SOURCE_CENTRIC,
+            )
+            for key in retrieved:
+                retrieved[key] = [*retrieved[key], full]
         context = "\n".join(
             item.text
             for item in [batch.context_before, *batch.sentences, batch.context_after]
@@ -823,6 +836,27 @@ class BatchWorkflow:
             if valid_review:
                 for index, item in enumerate(results):
                     span = review.retry_original_spans.get(item.edit.patch_id)
+                    if (
+                        span
+                        and sentence.text.count(span) == 1
+                        and item.edit.global_start is not None
+                        and item.edit.global_end is not None
+                    ):
+                        left = sentence.start + sentence.text.index(span)
+                        right = left + len(span)
+                        start = min(left, item.edit.global_start)
+                        end = max(right, item.edit.global_end)
+                        protected = [
+                            other
+                            for other in results
+                            if other.status is PatchStatus.ACCEPTED
+                            and other.edit.patch_id not in failed_ids
+                        ]
+                        if end - start <= 160 and not any(
+                            other.final_start < end and start < other.final_end
+                            for other in protected
+                        ):
+                            span = state["original_text"][start:end]
                     if (
                         item.edit.patch_id in failed_ids
                         and span

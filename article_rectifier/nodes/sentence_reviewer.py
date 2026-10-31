@@ -89,7 +89,8 @@ def review_sentence(
         "Flag partial corrections that leave these relationships wrong. For a failed "
         "patch needing adjacent context repaired, put its exact ORIGINAL sentence "
         "substring in retry_original_spans keyed by patch ID. Identify all linked "
-        "patches involved in that failing relationship. Return JSON matching the schema."
+        "patches involved in that failing relationship. Return JSON matching "
+        "the schema."
     )
     return client.complete_structured(
         [
